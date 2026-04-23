@@ -1,8 +1,9 @@
 import CartManager from '../cartManager';
 
 export default class AddToCart {
-    constructor(stateManager) {
+    constructor(stateManager, productMessages) {
         this.state = stateManager;
+        this.productMessages = productMessages;
         this.cartManager = new CartManager();
 
         this.button = document.querySelector('#product-add-button');
@@ -76,6 +77,11 @@ export default class AddToCart {
     }
 
     updateButtonState(state) {
+        if (this.productMessages) {
+            this.productMessages.hideMessage('cart-error');
+        }
+        if (this.form) this.form.classList.remove('has-cart-error');
+
         const { aliasData, inventory, blemSelected } = state;
 
         // We expect alias to be an object with a 'bc_id' property representing the BC Product ID
@@ -149,13 +155,22 @@ export default class AddToCart {
 
         this.button.classList.add('loading');
 
+        if (this.productMessages) {
+            this.productMessages.hideMessage('cart-error');
+        }
+        this.form.classList.remove('has-cart-error');
+
         // Create FormData from the form element
         // This automatically captures the updated product_id value from the DOM
         const formData = new FormData(this.form);
 
         this.cartManager.addToCart(formData)
             .catch((error) => {
-                console.error('Error adding to cart:', error);
+                const message = typeof error === 'string' ? error : 'There was a problem adding this item to your cart.';
+                if (this.productMessages) {
+                    this.productMessages.showMessage('cart-error', message);
+                }
+                this.form.classList.add('has-cart-error');
             })
             .finally(() => {
                 this.button.classList.remove('loading');

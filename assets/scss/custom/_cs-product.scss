@@ -612,10 +612,17 @@ $cs-button-height: 50px;
     background-color: stencilColor('color-infoLight');
     color: stencilColor('color-textBase');
   }
+
+  .cs-product-message--cart-error {
+    border-left: 4px solid stencilColor('color-error');
+    background-color: stencilColor('color-errorLight');
+    color: stencilColor('color-textBase');
+  }
 }
 
 .cs-product-form.has-incompatibility-message,
-.cs-product-form.is-awaiting-vehicle {
+.cs-product-form.is-awaiting-vehicle,
+.cs-product-form.has-cart-error {
   #product-messages {
     display: block;
   }
@@ -628,7 +635,8 @@ $cs-button-height: 50px;
 
 @include breakpoint('medium') {
   .cs-product-form.has-incompatibility-message,
-  .cs-product-form.is-awaiting-vehicle {
+  .cs-product-form.is-awaiting-vehicle,
+  .cs-product-form.has-cart-error {
     #product-messages {
       grid-row: 2;
       grid-column: 1 / -1;

@@ -70,7 +70,7 @@ export default class ProductController {
             this.productDetails = new ProductDetails(this.stateManager);
             this.rating = new Rating(this.stateManager);
             this.imageGallery = new ImageGallery(this.stateManager);
-            this.addToCart = new AddToCart(this.stateManager);
+            this.addToCart = new AddToCart(this.stateManager, this.productMessages);
             this.badges = new Badges(this.stateManager);
             this.blemProducts = new BlemProducts(this.stateManager);
             this.schemaManager = new SchemaManager(this.stateManager);
