@@ -74,8 +74,18 @@ export default class ProductDetails {
 
     _decodeHTML(html) {
         if (!html) return '';
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-        return doc.documentElement.textContent;
+        // fitment_notes (and possibly other fields) arrive double-encoded from the
+        // CDN, so loop until the string is stable. textarea decodes entities without
+        // parsing tags, preserving any intentional markup for innerHTML rendering.
+        const txt = document.createElement('textarea');
+        let current = html;
+        for (let i = 0; i < 5; i += 1) {
+            txt.innerHTML = current;
+            const next = txt.value;
+            if (next === current) break;
+            current = next;
+        }
+        return current;
     }
 
     _animate(element) {
@@ -89,12 +99,15 @@ export default class ProductDetails {
         if (this.descriptionElement) this.descriptionElement.innerHTML = data.description || '';
         if (this.fitmentNotesElement) {
             if (data.fitment_notes) {
-                this.fitmentNotesElement.innerHTML = data.fitment_notes;
+                // QTY currently double-encodes this field; the _decodeHTML loop unwraps
+                // that. Once QTY serves plain Unicode, the decode becomes a no-op and
+                // this call can be dropped.
+                this.fitmentNotesElement.textContent = this._decodeHTML(data.fitment_notes);
                 this.fitmentNotesElement.style.visibility = 'visible';
                 this.fitmentNotesElement.style.display = '';
                 this._animate(this.fitmentNotesElement);
             } else {
-                this.fitmentNotesElement.innerHTML = '';
+                this.fitmentNotesElement.textContent = '';
                 this.fitmentNotesElement.style.visibility = 'hidden';
                 this.fitmentNotesElement.style.display = '';
             }
