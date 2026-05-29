@@ -132,26 +132,6 @@
 
     {{{footer.scripts}}}
 
-    <script type='text/javascript'>
-        {{#if page_type '===' 'product' }}
-        try {
-            window.stamped_bigcommerce_product = {
-                id: '{{product.id}}',
-                title: '{{product.title}}',
-                url: '{{product.url}}',
-                imageUrl: '{{getImage product.main_image 'product'}}',
-                brand: '{{ product.brand.name }}',
-                brandUrl: '{{ product.brand.url }}',
-                priceWithoutTax: '{{ product.price.without_tax.value }}',
-                priceWithTax: '{{ product.price.with_tax.value }}',
-                currency: '{{currency_selector.active_currency_code}}',
-                sku: '{{product.sku}}',
-                barcode: ''
-            }
-        } catch (e) { }
-        {{/if}}
-    </script>
-    
 </body>
 
 </html>

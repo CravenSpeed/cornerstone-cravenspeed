@@ -6,7 +6,6 @@ import StateManager from './stateManager';
 import FulfillmentStatus from './ui/fulfillmentStatus';
 import AliasSelection from './ui/aliasSelection';
 import ProductDetails from './ui/productDetails';
-import Rating from './ui/rating';
 import ImageGallery from './ui/imageGallery';
 import AddToCart from './ui/addToCart';
 import ProductMessages from './ui/productMessages';
@@ -68,7 +67,6 @@ export default class ProductController {
             this.fulfillmentStatus = new FulfillmentStatus(this.stateManager);
             this.aliasSelection = new AliasSelection(this.stateManager, this.productMessages);
             this.productDetails = new ProductDetails(this.stateManager);
-            this.rating = new Rating(this.stateManager);
             this.imageGallery = new ImageGallery(this.stateManager);
             this.addToCart = new AddToCart(this.stateManager, this.productMessages);
             this.badges = new Badges(this.stateManager);

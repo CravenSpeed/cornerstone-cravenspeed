@@ -1,7 +1,6 @@
 export default class SchemaManager {
     constructor(stateManager) {
         this.stateManager = stateManager;
-        this.ratingPatched = false;
         this.lastAliasId = null;
         this.lastBlemSelected = null;
         this.productScript = null;
@@ -11,9 +10,6 @@ export default class SchemaManager {
     }
 
     update(state) {
-        if (!this.ratingPatched && state.archetypeData) {
-            this._patchRating(state.archetypeData);
-        }
         if (state.aliasData && state.inventory) {
             const aliasId = state.aliasData.base_id;
             const { blemSelected } = state;
@@ -41,30 +37,6 @@ export default class SchemaManager {
             }
         }
         return false;
-    }
-
-    _patchRating(archetypeData) {
-        if (!this._findProductSchema()) return;
-
-        const {
-            archetype_average_review: ratingValue,
-            archetype_review_count: reviewCount,
-        } = archetypeData;
-
-        const count = parseInt(reviewCount, 10) || 0;
-
-        if (count > 0 && ratingValue) {
-            this.productSchema.aggregateRating = {
-                '@type': 'AggregateRating',
-                ratingValue: String(parseFloat(ratingValue)),
-                reviewCount: String(count),
-                bestRating: '5',
-                worstRating: '1',
-            };
-            this.productScript.textContent = JSON.stringify(this.productSchema);
-        }
-
-        this.ratingPatched = true;
     }
 
     _patchAvailability(aliasData, inventory, blemSelected) {
