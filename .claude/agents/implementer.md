@@ -17,10 +17,12 @@ gh api repos/CravenSpeed/cs-ugc/contents/UGC-SRS.md --jq '.content' | base64 -d
 
 The M6 milestone DoD is in `CravenSpeed/cs-ugc/UGC-MILESTONES.md` (same access pattern). The handoff brief is `CravenSpeed/cs-ugc` issue **#94**. Request/response shapes, status codes, query params, field names — all frozen in the SRS. **Do not invent fields.**
 
+**Published-JSON field names are frozen in §3.1.4 ("QTY Publish Changes Required").** Any field you read from the archetype / alias / search JSON that QTY publishes for UGC — `qty_alias_index` (alias JSON), `rating_average` / `review_count` (archetype + search JSON) — is named there. Source the exact key from §3.1.4; never guess or normalize it. Note the three-layer naming for the alias id: DB `Alias.alias_index` → published JSON `qty_alias_index` → API param `alias_id` / `sort_alias`.
+
 ## How you operate
 
-1. **Read the issue completely** (`gh issue view <N>`) — its scope, acceptance criteria, and any "Blocked by" note. If a dependency isn't satisfied (e.g. an issue gated on `alias_index` in the alias JSON, or the Turnstile site key not yet provisioned), stop and report back rather than starting.
-2. **Read the SRS sections referenced** (§3.4 JS Modules, §3.5 Product Cards, §3.6 Error Responses, and the relevant §3.2 endpoint shapes). Fetch them from cs-ugc as above.
+1. **Read the issue completely** (`gh issue view <N>`) — its scope, acceptance criteria, and any "Blocked by" note. If a dependency isn't satisfied (e.g. an issue gated on `qty_alias_index` in the alias JSON, or the Turnstile site key not yet provisioned), stop and report back rather than starting.
+2. **Read the SRS sections referenced** (§3.4 JS Modules, §3.5 Product Cards, §3.6 Error Responses, the relevant §3.2 endpoint shapes, and **§3.1.4 for any published-JSON field names** you consume). Fetch them from cs-ugc as above.
 3. **Read the milestone DoD** — every acceptance criterion on the issue should map back to an M6 DoD bullet.
 4. **Plan briefly** — a short TodoWrite list of concrete steps, especially when the work crosses files. Don't over-plan.
 5. **Implement.** Stay inside the issue's scope. Don't refactor neighboring components, don't add features the issue doesn't list, don't write speculative abstractions. Match the existing product-module patterns.

@@ -20,7 +20,7 @@ M6 DoD: `CravenSpeed/cs-ugc/UGC-MILESTONES.md`. Handoff brief: `CravenSpeed/cs-u
 ## How you operate
 
 1. **Read the issue first** (`gh issue view <N>`), including every acceptance criterion. Don't read the PR until you know what it was *supposed* to do.
-2. **Read the SRS sections referenced** (§3.4 / §3.5 / §3.6 / relevant §3.2 endpoint shapes). The PR must match field names, types, status codes, and query params exactly. If the implementer "improved" a shape, that's a finding.
+2. **Read the SRS sections referenced** (§3.4 / §3.5 / §3.6 / relevant §3.2 endpoint shapes, and **§3.1.4 for any published-JSON field names** the PR consumes). The PR must match field names, types, status codes, and query params exactly. If the implementer "improved" a shape, that's a finding.
 3. **Read the PR diff** (`gh pr diff <N>`).
 4. **Run the checks locally**: `npx grunt check` (ESLint + stylelint + Jest). If tests don't exist where they should, that's a finding.
 5. **Verify each acceptance criterion** is actually satisfied — not just claimed in the PR body. Tick or call out.
@@ -34,6 +34,7 @@ M6 DoD: `CravenSpeed/cs-ugc/UGC-MILESTONES.md`. Handoff brief: `CravenSpeed/cs-u
 
 ### Contract compliance
 - Request/response shapes match the SRS exactly. No invented, renamed, or missing fields.
+- **Published-JSON field names match §3.1.4 exactly** — `qty_alias_index` (alias JSON), `rating_average` / `review_count` (archetype + search JSON). A guessed/normalized key (e.g. reading `alias_index` instead of `qty_alias_index`) is a finding. Three-layer naming: DB `Alias.alias_index` → JSON `qty_alias_index` → API `alias_id` / `sort_alias`.
 - Query params (`page`, `sort`, `rating`, `verified`, `media`, `sort_alias`) match §3.2 names and semantics.
 - Status-code handling matches the §3.6 table: 429 → "too many submissions"; 400/422 → surface the `error` field; 500 → generic failure.
 - The API base URL `https://ugc.cravenspeed.com` is defined **once**, in `ugcApi.js` — no other module hardcodes it.
