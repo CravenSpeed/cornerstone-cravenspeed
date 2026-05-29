@@ -69,7 +69,7 @@ Pulled from the project CLAUDE.md and the SRS — they apply regardless of which
 ## When you're stuck
 
 - **Spec ambiguity** → stop, report to the PM. Don't guess on contracts.
-- **Cross-codebase work** → this repo is the storefront theme only. If the work belongs in cs-ugc (API) or QTY (publish/sync, e.g. baking `rating_average` or `alias_index` into JSON), report it to the PM to track on the cs-ugc side. Don't try to fix it here.
+- **Cross-codebase work** → this repo is the storefront theme only. If the work belongs in cs-ugc (API) or QTY (publish/sync, e.g. baking `rating_average` or `alias_index` into JSON), report it to the PM to track on the cs-ugc side. Don't try to fix it here. **State the need at the contract boundary** — *what* this repo requires in the file it consumes (e.g. "`qty_alias_index` must be present in the alias JSON at the `dataManager.js` URL") — and stop there. Do **not** prescribe the other repo's internals (file paths, line numbers, dict/function names) even if you have read access to it: you can't verify them from here, and a wrong guess propagates downstream unchecked. Reference-reading another repo is for understanding, never for dictating its work.
 - **Scope-creep temptation** → resist. If you find a real bug or rough edge outside the issue's scope, report it to the PM. Don't fix it in this PR.
 
 ## Deliverable

@@ -35,6 +35,7 @@ M6 DoD: `CravenSpeed/cs-ugc/UGC-MILESTONES.md`. Handoff brief: `CravenSpeed/cs-u
 ### Contract compliance
 - Request/response shapes match the SRS exactly. No invented, renamed, or missing fields.
 - **Published-JSON field names match §3.1.4 exactly** — `qty_alias_index` (alias JSON), `rating_average` / `review_count` (archetype + search JSON). A guessed/normalized key (e.g. reading `alias_index` instead of `qty_alias_index`) is a finding. Three-layer naming: DB `Alias.alias_index` → JSON `qty_alias_index` → API `alias_id` / `sort_alias`.
+- **Publish-target reconciliation** — for any field the PR reads from a published JSON, reconcile the file against what this repo *actually fetches*: the bucket + path in `dataManager.js` (`craven-cdn-archetypes/{archetype}/{alias}.json` for alias data, `/global/cravenspeed-global-search.json` for search). Matching the field *name* is not enough — a field present in some other publish artifact (different bucket or file) is still missing from ours. If a PR or issue claims a field "is published" without a live check against the consumed URL, that's a finding. A feature that reads a field absent from the consumed file fails silently, not loudly — so the check is mandatory, not optional.
 - Query params (`page`, `sort`, `rating`, `verified`, `media`, `sort_alias`) match §3.2 names and semantics.
 - Status-code handling matches the §3.6 table: 429 → "too many submissions"; 400/422 → surface the `error` field; 500 → generic failure.
 - The API base URL `https://ugc.cravenspeed.com` is defined **once**, in `ugcApi.js` — no other module hardcodes it.
@@ -53,6 +54,7 @@ M6 DoD: `CravenSpeed/cs-ugc/UGC-MILESTONES.md`. Handoff brief: `CravenSpeed/cs-u
 - The PR does only what the issue asks. Out-of-scope refactors, "while I was here" fixes, and speculative abstractions are findings.
 - For the **clean-slate issue**: verify the Stamped.io removal is *complete* — no dangling widget markup, loader script, config keys, or dead references to the deprecated archetype-JSON rating fields. Half-removed framework is a blocker.
 - If the implementer found a real bug outside scope, there should be a note to the PM, not a fix in this PR.
+- **Stay in this repo's lane.** This repo owns the storefront only. Issues, PRs, and comments may state a cross-repo *need* at the contract boundary ("the alias JSON must carry `qty_alias_index`") but must **not** prescribe how another repo (QTY publish path, cs-ugc API) implements it — no foreign file paths, line numbers, or internal dict/structure names. A storefront artifact dictating another repo's internals is a finding even when it happens to be correct, because no one here can verify it and the wrong guess propagates unchecked.
 
 ### Plain-quality checks
 - ESLint airbnb/base and stylelint rules honored (see project CLAUDE.md). `npx grunt check` is the source of truth.
