@@ -49,6 +49,11 @@ blog:
         {{> components/products-cs/product-grid }}
     </section>
 
+    <section class="home-section" aria-labelledby="customer-reviews-heading">
+        <h2 id="customer-reviews-heading" class="page-heading">From Our Customers</h2>
+        <div class="cs-ugc-overview" data-ugc-overview></div>
+    </section>
+
     {{#if blog.recent_posts}}
         <section class="cs-blog-posts home-section">
             <h2 class="page-heading">{{lang 'blog.recent_posts'}}</h2>

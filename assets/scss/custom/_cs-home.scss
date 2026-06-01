@@ -10,6 +10,7 @@
 //  2. Vehicle Selector
 //  3. Product Grid
 //  4. Blog Posts
+//  5. UGC Overview Photo Wall
 //
 
 .main.full.cs-home {
@@ -137,4 +138,116 @@
       object-fit: cover;
     }
   }
+}
+
+// 5. UGC Overview Photo Wall
+// -----------------------------------------------------------------------------
+.cs-ugc-overview {
+  // Reserve vertical space while GET /api/overview resolves so the wall does
+  // not shift the home layout when it populates (CLS).
+  min-height: 320px;
+}
+
+.cs-ugc-overview-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing('quarter');
+  justify-content: center;
+  margin-bottom: spacing('single');
+}
+
+.cs-ugc-overview-filter {
+  padding: spacing('quarter') spacing('half');
+  border: 1px solid stencilColor('color-grayLight');
+  border-radius: stencilRadius('base');
+  background-color: stencilColor('color-white');
+  color: stencilColor('color-textBase');
+  cursor: pointer;
+
+  &.is-active {
+    background-color: stencilColor('color-primary');
+    border-color: stencilColor('color-primary');
+    color: stencilColor('color-white');
+  }
+}
+
+.cs-ugc-overview-wall {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: spacing('half');
+
+  @include breakpoint('medium') {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.cs-ugc-overview-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid stencilColor('color-grayLight');
+  border-radius: stencilRadius('card');
+  overflow: hidden;
+}
+
+.cs-ugc-overview-thumb {
+  position: relative;
+  width: 100%;
+  padding-top: 100%;
+  background-color: stencilColor('color-grayLightest');
+
+  img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  &.is-empty {
+    padding-top: 0;
+    min-height: spacing('double');
+  }
+}
+
+.cs-ugc-overview-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('quarter');
+  padding: spacing('half');
+}
+
+.cs-ugc-overview-stars {
+  color: stencilColor('color-primary');
+}
+
+.cs-ugc-overview-title {
+  margin: 0;
+  font-size: stencilFontSize('smaller');
+}
+
+.cs-ugc-overview-text {
+  margin: 0;
+}
+
+.cs-ugc-overview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing('quarter');
+  justify-content: space-between;
+  margin: 0;
+  color: stencilColor('color-textSecondary');
+}
+
+.cs-ugc-overview-empty {
+  text-align: center;
+  color: stencilColor('color-textSecondary');
+}
+
+.cs-ugc-overview-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: spacing('half');
+  margin-top: spacing('single');
 }
