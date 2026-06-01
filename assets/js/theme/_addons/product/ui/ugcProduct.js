@@ -27,9 +27,17 @@
  * It mirrors the reviews list/sort/pagination pattern but has no filters and
  * renders each approved question with its single staff answer (§4.1 Question).
  *
- * Alias-sort refetch (sort_alias, #7) and the submission modal (#8) are separate
- * slices and intentionally out of scope here. §3.4.1 lists sort_alias under this
- * module; #17 scopes it to #7.
+ * Slice 6d (#7) adds alias-aware sorting. The module already subscribes to the
+ * local StateManager; on each notify it reads the selected alias's published
+ * `qty_alias_index` (SRS §3.1.4) off state.aliasData and, when it changes,
+ * refetches BOTH reviews and questions with `sort_alias={qty_alias_index}` so
+ * alias-matching items float to the top WITHIN the current sort, without
+ * excluding non-matching items (SRS §3.2.1, §3.2.2, §3.4.1). Deselecting the
+ * alias (aliasData cleared, or no integer index) drops the param. The active
+ * sort and filters are preserved across the transition; only the page resets to
+ * 1, since the relevance ordering shifts.
+ *
+ * The submission modal (#8) is a separate slice and intentionally out of scope.
  */
 
 const MAX_STARS = 5;
@@ -94,6 +102,12 @@ export default class UgcProduct {
         this.questionPerPage = 0;
         this.questionCount = 0;
         this.questionsLoaded = false;
+
+        // The integer alias index currently driving sort_alias (SRS §3.1.4 /
+        // §3.4.1), or null when no alias is selected. Tracked so an alias-driven
+        // refetch only fires when the selection actually changes.
+        this.sortAlias = null;
+        this.reviewsLoaded = false;
 
         this.ratingElement = document.querySelector('[data-product-rating]');
         this.listElement = document.querySelector('#product-reviews');
@@ -161,6 +175,7 @@ export default class UgcProduct {
 
         this.renderSummary();
         this.summaryPainted = true;
+        this.reviewsLoaded = true;
         this.renderPage(data);
     }
 
@@ -193,6 +208,7 @@ export default class UgcProduct {
             rating: this.query.rating,
             verified: this.query.verified,
             media: this.query.media,
+            sort_alias: this.sortAlias,
         };
     }
 
@@ -207,12 +223,65 @@ export default class UgcProduct {
 
     /**
      * StateManager subscriber. Re-paints the cached summary so the block stays
-     * consistent across re-renders; alias-driven refetch is #7.
+     * consistent across re-renders, then applies any alias-driven sort change.
+     * @param {Object} [state] - The local StateManager snapshot.
      */
-    update() {
+    update(state) {
         if (this.summaryPainted) {
             this.renderSummary();
         }
+
+        this.applyAliasSort(state);
+    }
+
+    /**
+     * Reconcile the active `sort_alias` with the alias currently selected on the
+     * local StateManager (SRS §3.4.1). On a change — select, deselect, or switch
+     * between aliases — refetch BOTH the reviews and questions lists so
+     * alias-matching items float to the top within the current sort, preserving
+     * the active sort and filters and resetting only the page (the relevance
+     * order shifts). No-ops when the selection is unchanged, so unrelated state
+     * notifications never trigger a refetch.
+     * @param {Object} [state] - The local StateManager snapshot.
+     */
+    applyAliasSort(state) {
+        const nextAlias = this._resolveAliasIndex(state);
+        if (nextAlias === this.sortAlias) {
+            return;
+        }
+
+        this.sortAlias = nextAlias;
+
+        // Only refetch a list that has completed its initial load, so the
+        // alias-driven refetch layers on top of an established list rather than
+        // racing the in-flight init fetch (which reads sort_alias live anyway).
+        if (this.reviewsLoaded) {
+            this.query.page = 1;
+            this.fetchReviews();
+        }
+
+        if (this.questionsLoaded) {
+            this.questionQuery.page = 1;
+            this.fetchQuestions();
+        }
+    }
+
+    /**
+     * Pull the published alias index (SRS §3.1.4 `qty_alias_index`) off the
+     * selected alias and normalize it to an integer, or null when no alias is
+     * selected / the field is absent or non-numeric. The value is passed
+     * verbatim as the API `sort_alias` param.
+     * @param {Object} [state] - The local StateManager snapshot.
+     * @returns {number|null}
+     */
+    _resolveAliasIndex(state) {
+        const aliasData = state && state.aliasData;
+        if (!aliasData) {
+            return null;
+        }
+
+        const index = parseInt(aliasData.qty_alias_index, 10);
+        return Number.isNaN(index) ? null : index;
     }
 
     onToolbarChange(event) {
@@ -302,6 +371,7 @@ export default class UgcProduct {
         return {
             page: this.questionQuery.page,
             sort: this.questionQuery.sort,
+            sort_alias: this.sortAlias,
         };
     }
 

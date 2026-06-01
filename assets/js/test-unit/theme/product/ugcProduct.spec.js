@@ -108,6 +108,7 @@ describe('UgcProduct (slice 6a)', () => {
             rating: null,
             verified: null,
             media: null,
+            sort_alias: null,
         });
     });
 
@@ -556,6 +557,7 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
         expect(api.getQuestions).toHaveBeenCalledWith(ARCHETYPE_ID, {
             page: 1,
             sort: 'date_desc',
+            sort_alias: null,
         });
     });
 
@@ -671,7 +673,7 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
             await flush();
 
             expect(api.getQuestions).toHaveBeenCalledTimes(2);
-            expect(qParamsOfCall(api, 2)).toEqual({ sort: expected, page: 1 });
+            expect(qParamsOfCall(api, 2)).toEqual({ sort: expected, page: 1, sort_alias: null });
         });
 
         it('resets to page 1 when the sort changes after paging forward', async () => {
@@ -748,6 +750,26 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
         });
     });
 
+    it('floats alias-matching questions on alias select and drops sort_alias on deselect', async () => {
+        const stateManager = buildStateManager();
+        const api = buildQaApi(okQuestions());
+        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+        await flush();
+
+        // Initial Q&A fetch carries no sort_alias.
+        expect(qParamsOfCall(api, 1).sort_alias).toBeNull();
+
+        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        await flush();
+        expect(api.getQuestions).toHaveBeenCalledTimes(2);
+        expect(qParamsOfCall(api, 2).sort_alias).toBe(4821);
+
+        stateManager._emit({ aliasData: null });
+        await flush();
+        expect(api.getQuestions).toHaveBeenCalledTimes(3);
+        expect(qParamsOfCall(api, 3).sort_alias).toBeNull();
+    });
+
     it('does not fetch questions when the Q&A DOM is absent', async () => {
         document.body.innerHTML = '<div id="product-reviews"></div>';
         const api = buildQaApi(okQuestions());
@@ -768,5 +790,135 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
         changeQuestionsSort('date_asc');
         await flush();
         expect(api.getQuestions).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('UgcProduct (slice 6d — alias-aware sort)', () => {
+    beforeEach(() => {
+        mountScaffold();
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    const paramsOfCall = (api, n) => api.getReviews.mock.calls[n - 1][1];
+
+    // A reviews-only api that returns a fresh ok envelope on every call, so each
+    // alias-driven refetch can be asserted against its params.
+    const buildReviewsApi = () => ({
+        getReviews: jest.fn(() => Promise.resolve(okEnvelope())),
+    });
+
+    it('omits sort_alias on the initial fetch (no alias selected)', async () => {
+        const api = buildReviewsApi();
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        expect(paramsOfCall(api, 1).sort_alias).toBeNull();
+    });
+
+    it('refetches reviews with sort_alias when an alias is selected', async () => {
+        const stateManager = buildStateManager();
+        const api = buildReviewsApi();
+        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+        await flush();
+
+        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        await flush();
+
+        expect(api.getReviews).toHaveBeenCalledTimes(2);
+        expect(paramsOfCall(api, 2).sort_alias).toBe(4821);
+    });
+
+    it('drops sort_alias when the alias is deselected', async () => {
+        const stateManager = buildStateManager();
+        const api = buildReviewsApi();
+        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+        await flush();
+
+        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        await flush();
+        stateManager._emit({ aliasData: null });
+        await flush();
+
+        expect(api.getReviews).toHaveBeenCalledTimes(3);
+        expect(paramsOfCall(api, 3).sort_alias).toBeNull();
+    });
+
+    it('preserves the active sort and filters across an alias-driven refetch', async () => {
+        const stateManager = buildStateManager();
+        const api = buildReviewsApi();
+        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+        await flush();
+
+        // Establish a non-default sort and two active filters before the alias
+        // is selected — they must survive the alias refetch unchanged.
+        changeSelect('sort', 'rating_desc');
+        await flush();
+        changeSelect('rating', '4');
+        await flush();
+        toggleCheckbox('verified', true);
+        await flush();
+
+        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        await flush();
+
+        const last = paramsOfCall(api, api.getReviews.mock.calls.length);
+        expect(last).toEqual({
+            page: 1,
+            sort: 'rating_desc',
+            rating: 4,
+            verified: true,
+            media: null,
+            sort_alias: 4821,
+        });
+    });
+
+    it('resets to page 1 when the alias selection changes', async () => {
+        const stateManager = buildStateManager();
+        const api = {
+            getReviews: jest.fn(() => Promise.resolve(okEnvelope({ total: 25, page: 1, per_page: 10 }))),
+        };
+        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+        await flush();
+
+        document.querySelector('[data-reviews-page="3"]').click();
+        await flush();
+        expect(paramsOfCall(api, 2).page).toBe(3);
+
+        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        await flush();
+        expect(paramsOfCall(api, 3).page).toBe(1);
+        expect(paramsOfCall(api, 3).sort_alias).toBe(4821);
+    });
+
+    it('does not refetch when an unrelated state notification leaves the alias unchanged', async () => {
+        const stateManager = buildStateManager();
+        const api = buildReviewsApi();
+        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+        await flush();
+
+        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        await flush();
+        expect(api.getReviews).toHaveBeenCalledTimes(2);
+
+        // Same alias re-emitted (e.g. inventory/blem change) — no extra fetch.
+        stateManager._emit({ aliasData: { qty_alias_index: 4821 }, blemSelected: true });
+        await flush();
+        expect(api.getReviews).toHaveBeenCalledTimes(2);
+    });
+
+    it('treats a missing or non-numeric qty_alias_index as no alias sort', async () => {
+        const stateManager = buildStateManager();
+        const api = buildReviewsApi();
+        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+        await flush();
+
+        // A "self" simple-product alias whose JSON carries no published index
+        // must not trigger an alias refetch and must not send sort_alias.
+        stateManager._emit({ aliasData: { bc_id: 99 } });
+        await flush();
+        expect(api.getReviews).toHaveBeenCalledTimes(1);
     });
 });
