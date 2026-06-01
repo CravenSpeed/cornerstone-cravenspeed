@@ -922,3 +922,120 @@ $cs-button-height: 50px;
   padding: spacing('half');
   background: stencilColor('color-greyLightest');
 }
+
+// Q&A tab (SRS §3.4.1 / §3.2.2). Mirrors the reviews list pattern; reserve
+// vertical space (min-height) so the async list does not shift on load.
+#product-questions {
+  min-height: 6rem;
+
+  .cs-questions-empty,
+  .cs-questions-error {
+    color: stencilColor('color-textSecondary');
+    margin: 0;
+  }
+}
+
+.cs-questions-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('half');
+  margin-bottom: spacing('single');
+
+  @include breakpoint('medium') {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: spacing('single');
+  }
+}
+
+.cs-questions-control {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('quarter');
+  font-size: 0.875rem;
+}
+
+.cs-questions-control-label {
+  color: stencilColor('color-textSecondary');
+  font-weight: 600;
+}
+
+.cs-questions-select {
+  height: 44px;
+  font-size: 1rem;
+  padding: 0 spacing('half');
+  border: 1px solid stencilColor('color-greyLightest');
+
+  &:focus {
+    border-color: stencilColor('color-primary');
+    outline: none;
+  }
+}
+
+.cs-questions-pagination {
+  min-height: 3rem;
+  margin-top: spacing('single');
+}
+
+.cs-questions-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing('quarter');
+  align-items: center;
+}
+
+.cs-questions-page {
+  min-width: 44px;
+  height: 44px;
+  padding: 0 spacing('half');
+  border: 1px solid stencilColor('color-greyLightest');
+  background: #fff;
+  color: stencilColor('color-textBase');
+  cursor: pointer;
+
+  &.is-current {
+    border-color: stencilColor('color-primary');
+    color: stencilColor('color-primary');
+    font-weight: 700;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.cs-question {
+  padding: spacing('single') 0;
+  border-bottom: 1px solid stencilColor('color-greyLightest');
+}
+
+.cs-question-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing('half');
+  align-items: center;
+  color: stencilColor('color-textSecondary');
+  font-size: 0.875rem;
+  margin: 0 0 spacing('half');
+}
+
+.cs-question-author {
+  font-weight: 700;
+}
+
+.cs-question-vehicle {
+  font-style: italic;
+  margin: 0 0 spacing('half');
+}
+
+.cs-question-body {
+  margin: 0;
+}
+
+.cs-question-answer {
+  margin-top: spacing('half');
+  padding: spacing('half');
+  background: stencilColor('color-greyLightest');
+}

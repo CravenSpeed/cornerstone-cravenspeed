@@ -771,6 +771,12 @@
                 "submit_value": "Submit Review"
             }
         },
+        "questions": {
+            "header": "Q&A",
+            "sort_label": "Sort by",
+            "sort_newest": "Newest",
+            "sort_oldest": "Oldest"
+        },
         "videos": {
             "header": "Videos",
             "hide": "Hide Videos",

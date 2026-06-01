@@ -482,3 +482,291 @@ describe('UgcProduct (slice 6b — sort, filter, pagination)', () => {
         expect(api.getReviews).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('UgcProduct (slice 6c — Q&A tab)', () => {
+    const buildQuestionEnvelope = (overrides = {}) => ({
+        items: [],
+        total: 0,
+        page: 1,
+        per_page: 10,
+        ...overrides,
+    });
+
+    const okQuestions = overrides => ({
+        ok: true,
+        status: 200,
+        data: buildQuestionEnvelope(overrides),
+    });
+
+    // A no-op reviews result so the reviews half of the module stays inert while
+    // the Q&A behaviour is exercised in isolation.
+    const reviewsNoop = () => Promise.resolve({ ok: true, status: 200, data: buildEnvelope() });
+
+    const buildQaApi = result => ({
+        getReviews: jest.fn(reviewsNoop),
+        getQuestions: jest.fn(() => Promise.resolve(result)),
+    });
+
+    const buildSequencedQaApi = (results) => {
+        let call = 0;
+        return {
+            getReviews: jest.fn(reviewsNoop),
+            getQuestions: jest.fn(() => {
+                const result = results[Math.min(call, results.length - 1)];
+                call += 1;
+                return Promise.resolve(result);
+            }),
+        };
+    };
+
+    const qParamsOfCall = (api, n) => api.getQuestions.mock.calls[n - 1][1];
+
+    const mountQaScaffold = () => {
+        document.body.innerHTML = `
+            <div class="cs-questions-toolbar" data-questions-toolbar>
+                <select data-questions-control="sort">
+                    <option value="date_desc">Newest</option>
+                    <option value="date_asc">Oldest</option>
+                </select>
+            </div>
+            <div id="product-questions"></div>
+            <div class="cs-questions-pagination" data-questions-pagination></div>
+        `;
+    };
+
+    const changeQuestionsSort = (value) => {
+        const el = document.querySelector('[data-questions-control="sort"]');
+        el.value = value;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    beforeEach(() => {
+        mountQaScaffold();
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    it('requests page 1 with the default date_desc sort on init', async () => {
+        const api = buildQaApi(okQuestions());
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        expect(api.getQuestions).toHaveBeenCalledWith(ARCHETYPE_ID, {
+            page: 1,
+            sort: 'date_desc',
+        });
+    });
+
+    it('renders approved questions and their staff answers', async () => {
+        const api = buildQaApi(okQuestions({
+            total: 2,
+            items: [
+                {
+                    id: 1,
+                    author: 'Jane D.',
+                    body: 'Does this fit the F56?',
+                    vehicle_label: 'MINI Cooper F56',
+                    staff_answer: 'Yes, it fits all F56 generations.',
+                    staff_answer_author: 'CravenSpeed',
+                    date: '2026-05-01T12:00:00Z',
+                },
+                {
+                    id: 2,
+                    author: 'Bob',
+                    body: 'Is hardware included?',
+                    staff_answer: 'All mounting hardware is in the box.',
+                    date: '2026-04-15T00:00:00Z',
+                },
+            ],
+        }));
+
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        const list = document.querySelector('#product-questions');
+        expect(list.querySelectorAll('.cs-question')).toHaveLength(2);
+        expect(list.textContent).toContain('Does this fit the F56?');
+        expect(list.textContent).toContain('Yes, it fits all F56 generations.');
+        expect(list.textContent).toContain('MINI Cooper F56');
+        expect(list.querySelectorAll('.cs-question-answer')).toHaveLength(2);
+    });
+
+    it('omits the answer block when staff_answer is null', async () => {
+        const api = buildQaApi(okQuestions({
+            total: 1,
+            items: [{
+                id: 1,
+                author: 'Jane D.',
+                body: 'Pending answer?',
+                staff_answer: null,
+                date: '2026-05-01T12:00:00Z',
+            }],
+        }));
+
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        const list = document.querySelector('#product-questions');
+        expect(list.querySelectorAll('.cs-question')).toHaveLength(1);
+        expect(list.querySelector('.cs-question-answer')).toBeNull();
+    });
+
+    it('renders the empty state when there are no approved questions', async () => {
+        const api = buildQaApi(okQuestions({ total: 0, items: [] }));
+
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        const list = document.querySelector('#product-questions');
+        expect(list.querySelector('.cs-questions-empty')).not.toBeNull();
+    });
+
+    it('renders an error state when the questions call resolves not-ok', async () => {
+        const api = buildQaApi({
+            ok: false, status: 0, message: 'Something went wrong.', error: 'network down',
+        });
+
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        const list = document.querySelector('#product-questions');
+        expect(list.querySelector('.cs-questions-error')).not.toBeNull();
+    });
+
+    it('escapes question and answer text to prevent HTML injection', async () => {
+        const api = buildQaApi(okQuestions({
+            total: 1,
+            items: [{
+                id: 1,
+                author: '<script>x</script>',
+                body: '<img src=x onerror=alert(1)>',
+                staff_answer: '<svg onload=alert(2)>',
+                date: '2026-05-01T12:00:00Z',
+            }],
+        }));
+
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        const list = document.querySelector('#product-questions');
+        expect(list.querySelector('script')).toBeNull();
+        expect(list.querySelector('.cs-question-body img')).toBeNull();
+        expect(list.querySelector('.cs-question-answer svg')).toBeNull();
+    });
+
+    describe('sort', () => {
+        const cases = [
+            ['date_desc', 'date_desc'],
+            ['date_asc', 'date_asc'],
+        ];
+
+        it.each(cases)('refetches with sort=%s when selected', async (value, expected) => {
+            const api = buildQaApi(okQuestions());
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            changeQuestionsSort(value);
+            await flush();
+
+            expect(api.getQuestions).toHaveBeenCalledTimes(2);
+            expect(qParamsOfCall(api, 2)).toEqual({ sort: expected, page: 1 });
+        });
+
+        it('resets to page 1 when the sort changes after paging forward', async () => {
+            const api = buildSequencedQaApi([
+                okQuestions({ total: 25, page: 1, per_page: 10 }),
+                okQuestions({ total: 25, page: 2, per_page: 10 }),
+                okQuestions({ total: 25, page: 1, per_page: 10 }),
+            ]);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-questions-page="2"]').click();
+            await flush();
+            expect(qParamsOfCall(api, 2).page).toBe(2);
+
+            changeQuestionsSort('date_asc');
+            await flush();
+            expect(qParamsOfCall(api, 3).page).toBe(1);
+            expect(qParamsOfCall(api, 3).sort).toBe('date_asc');
+        });
+    });
+
+    describe('pagination', () => {
+        it('renders a page button per page derived from total / per_page', async () => {
+            const api = buildQaApi(okQuestions({
+                total: 25,
+                page: 1,
+                per_page: 10,
+                items: [{ id: 1, body: 'Q?', date: '2026-01-01' }],
+            }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const numbered = document.querySelectorAll('[data-page-key="1"], [data-page-key="2"], [data-page-key="3"]');
+            expect(numbered).toHaveLength(3);
+            expect(document.querySelector('[data-questions-page="2"]')).not.toBeNull();
+            expect(document.querySelector('[data-questions-page="4"]')).toBeNull();
+        });
+
+        it('hides pagination when a single page covers all results', async () => {
+            const api = buildQaApi(okQuestions({ total: 6, page: 1, per_page: 10 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const pagination = document.querySelector('[data-questions-pagination]');
+            expect(pagination.innerHTML).toBe('');
+            expect(pagination.style.visibility).toBe('hidden');
+        });
+
+        it('refetches the chosen page on a pagination click', async () => {
+            const api = buildSequencedQaApi([
+                okQuestions({ total: 25, page: 1, per_page: 10 }),
+                okQuestions({ total: 25, page: 3, per_page: 10 }),
+            ]);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-questions-page="3"]').click();
+            await flush();
+
+            expect(api.getQuestions).toHaveBeenCalledTimes(2);
+            expect(qParamsOfCall(api, 2).page).toBe(3);
+        });
+
+        it('does not refetch when clicking the already-current page', async () => {
+            const api = buildQaApi(okQuestions({ total: 25, page: 1, per_page: 10 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-questions-page="1"]').click();
+            await flush();
+
+            expect(api.getQuestions).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('does not fetch questions when the Q&A DOM is absent', async () => {
+        document.body.innerHTML = '<div id="product-reviews"></div>';
+        const api = buildQaApi(okQuestions());
+
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        expect(api.getQuestions).not.toHaveBeenCalled();
+    });
+
+    it('removes Q&A toolbar and pagination listeners on destroy', async () => {
+        const api = buildQaApi(okQuestions({ total: 25, page: 1, per_page: 10 }));
+        const ugc = new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        ugc.destroy();
+
+        changeQuestionsSort('date_asc');
+        await flush();
+        expect(api.getQuestions).toHaveBeenCalledTimes(1);
+    });
+});
