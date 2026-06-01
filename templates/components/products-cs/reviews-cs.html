@@ -1,1 +1,34 @@
-<div id="product-reviews"></div>
+<div class="cs-reviews" data-reviews>
+    <div class="cs-reviews-toolbar" data-reviews-toolbar>
+        <label class="cs-reviews-control cs-reviews-control--sort">
+            <span class="cs-reviews-control-label">{{lang 'products.reviews.sort_label'}}</span>
+            <select class="cs-reviews-select" data-reviews-control="sort">
+                <option value="date_desc">{{lang 'products.reviews.sort_newest'}}</option>
+                <option value="date_asc">{{lang 'products.reviews.sort_oldest'}}</option>
+                <option value="rating_desc">{{lang 'products.reviews.sort_rating_high'}}</option>
+                <option value="rating_asc">{{lang 'products.reviews.sort_rating_low'}}</option>
+            </select>
+        </label>
+        <label class="cs-reviews-control cs-reviews-control--rating">
+            <span class="cs-reviews-control-label">{{lang 'products.reviews.filter_rating'}}</span>
+            <select class="cs-reviews-select" data-reviews-control="rating">
+                <option value="">{{lang 'products.reviews.filter_rating_all'}}</option>
+                <option value="5">5</option>
+                <option value="4">4</option>
+                <option value="3">3</option>
+                <option value="2">2</option>
+                <option value="1">1</option>
+            </select>
+        </label>
+        <label class="cs-reviews-control cs-reviews-control--toggle">
+            <input type="checkbox" data-reviews-control="verified">
+            <span class="cs-reviews-control-label">{{lang 'products.reviews.filter_verified'}}</span>
+        </label>
+        <label class="cs-reviews-control cs-reviews-control--toggle">
+            <input type="checkbox" data-reviews-control="media">
+            <span class="cs-reviews-control-label">{{lang 'products.reviews.filter_media'}}</span>
+        </label>
+    </div>
+    <div id="product-reviews"></div>
+    <div class="cs-reviews-pagination" data-reviews-pagination></div>
+</div>
