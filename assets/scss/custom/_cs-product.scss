@@ -778,6 +778,87 @@ $cs-button-height: 50px;
     }
   }
 
+  // Sort/filter toolbar (SRS §3.4.1 / §3.2.1). Mobile-first: controls stack and
+  // wrap; a horizontal row on desktop.
+  .cs-reviews-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: spacing('half');
+    margin-bottom: spacing('single');
+
+    @include breakpoint('medium') {
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: spacing('single');
+    }
+  }
+
+  .cs-reviews-control {
+    display: flex;
+    flex-direction: column;
+    gap: spacing('quarter');
+    font-size: 0.875rem;
+
+    &--toggle {
+      flex-direction: row;
+      align-items: center;
+      gap: spacing('half');
+    }
+  }
+
+  .cs-reviews-control-label {
+    color: stencilColor('color-textSecondary');
+    font-weight: 600;
+  }
+
+  .cs-reviews-select {
+    height: 44px;
+    font-size: 1rem;
+    padding: 0 spacing('half');
+    border: 1px solid #ccc;
+
+    &:focus {
+      border-color: stencilColor('color-primary');
+      outline: none;
+    }
+  }
+
+  // Pagination (SRS §3.2.1 envelope counts). Reserve space rather than hiding so
+  // the list does not jump when a single page collapses the control.
+  .cs-reviews-pagination {
+    min-height: 3rem;
+    margin-top: spacing('single');
+  }
+
+  .cs-reviews-pages {
+    display: flex;
+    flex-wrap: wrap;
+    gap: spacing('quarter');
+    align-items: center;
+  }
+
+  .cs-reviews-page {
+    min-width: 44px;
+    height: 44px;
+    padding: 0 spacing('half');
+    border: 1px solid stencilColor('color-greyLightest');
+    background: #fff;
+    color: stencilColor('color-textBase');
+    cursor: pointer;
+
+    &.is-current {
+      border-color: stencilColor('color-primary');
+      color: stencilColor('color-primary');
+      font-weight: 700;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+  }
+
   #product-rating {
     .cs-rating-stars {
       display: inline-flex;

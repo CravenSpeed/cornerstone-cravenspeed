@@ -35,9 +35,53 @@ const flush = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 const mountScaffold = () => {
     document.body.innerHTML = `
         <a id="product-rating" data-product-rating></a>
+        <div class="cs-reviews-toolbar" data-reviews-toolbar>
+            <select data-reviews-control="sort">
+                <option value="date_desc">Newest</option>
+                <option value="date_asc">Oldest</option>
+                <option value="rating_desc">Highest</option>
+                <option value="rating_asc">Lowest</option>
+            </select>
+            <select data-reviews-control="rating">
+                <option value="">All</option>
+                <option value="5">5</option>
+                <option value="4">4</option>
+            </select>
+            <input type="checkbox" data-reviews-control="verified">
+            <input type="checkbox" data-reviews-control="media">
+        </div>
         <div id="product-reviews"></div>
+        <div class="cs-reviews-pagination" data-reviews-pagination></div>
     `;
 };
+
+// Drive a toolbar control and dispatch the change event the component listens for.
+const changeSelect = (control, value) => {
+    const el = document.querySelector(`[data-reviews-control="${control}"]`);
+    el.value = value;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+};
+
+const toggleCheckbox = (control, checked) => {
+    const el = document.querySelector(`[data-reviews-control="${control}"]`);
+    el.checked = checked;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+};
+
+// Build an api whose getReviews returns a queued sequence of results (one per
+// call), so each refetch can assert against a distinct envelope.
+const buildSequencedApi = (results) => {
+    let call = 0;
+    return {
+        getReviews: jest.fn(() => {
+            const result = results[Math.min(call, results.length - 1)];
+            call += 1;
+            return Promise.resolve(result);
+        }),
+    };
+};
+
+const okEnvelope = overrides => ({ ok: true, status: 200, data: buildEnvelope(overrides) });
 
 describe('UgcProduct (slice 6a)', () => {
     beforeEach(() => {
@@ -48,7 +92,7 @@ describe('UgcProduct (slice 6a)', () => {
         document.body.innerHTML = '';
     });
 
-    it('requests page 1 of reviews for the archetype on init', async () => {
+    it('requests page 1 with the default sort and no active filters on init', async () => {
         const api = buildApi({ ok: true, status: 200, data: buildEnvelope() });
         const stateManager = buildStateManager();
 
@@ -56,7 +100,15 @@ describe('UgcProduct (slice 6a)', () => {
         new UgcProduct(ARCHETYPE_ID, stateManager, api);
         await flush();
 
-        expect(api.getReviews).toHaveBeenCalledWith(ARCHETYPE_ID, { page: 1 });
+        // verified/media are null (omitted by buildQuery) until toggled on; rating
+        // is null until selected; sort defaults to date_desc (SRS §3.2.1).
+        expect(api.getReviews).toHaveBeenCalledWith(ARCHETYPE_ID, {
+            page: 1,
+            sort: 'date_desc',
+            rating: null,
+            verified: null,
+            media: null,
+        });
     });
 
     it('renders the rating summary from the envelope aggregates (overrides stale JSON)', async () => {
@@ -218,6 +270,215 @@ describe('UgcProduct (slice 6a)', () => {
         ugc.destroy();
         stateManager._emit({});
         // Still only the single init fetch after destroy.
+        expect(api.getReviews).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('UgcProduct (slice 6b — sort, filter, pagination)', () => {
+    beforeEach(() => {
+        mountScaffold();
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    // The params object passed on the Nth getReviews call (1-indexed mirrors the
+    // human "first/second" refetch language).
+    const paramsOfCall = (api, n) => api.getReviews.mock.calls[n - 1][1];
+
+    describe('sort', () => {
+        const cases = [
+            ['date_desc', 'date_desc'],
+            ['date_asc', 'date_asc'],
+            ['rating_desc', 'rating_desc'],
+            ['rating_asc', 'rating_asc'],
+        ];
+
+        it.each(cases)('refetches with sort=%s when selected', async (value, expected) => {
+            const api = buildApi(okEnvelope());
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            changeSelect('sort', value);
+            await flush();
+
+            expect(api.getReviews).toHaveBeenCalledTimes(2);
+            expect(paramsOfCall(api, 2)).toEqual(expect.objectContaining({ sort: expected, page: 1 }));
+        });
+    });
+
+    describe('filters', () => {
+        it('emits rating as an integer when a star filter is chosen', async () => {
+            const api = buildApi(okEnvelope());
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            changeSelect('rating', '4');
+            await flush();
+
+            expect(paramsOfCall(api, 2).rating).toBe(4);
+        });
+
+        it('clears the rating filter (null) when "all ratings" is reselected', async () => {
+            const api = buildApi(okEnvelope());
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            changeSelect('rating', '5');
+            await flush();
+            changeSelect('rating', '');
+            await flush();
+
+            expect(paramsOfCall(api, 3).rating).toBeNull();
+        });
+
+        it('emits verified=true only when toggled on, omitted (null) when off', async () => {
+            const api = buildApi(okEnvelope());
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            toggleCheckbox('verified', true);
+            await flush();
+            expect(paramsOfCall(api, 2).verified).toBe(true);
+
+            toggleCheckbox('verified', false);
+            await flush();
+            expect(paramsOfCall(api, 3).verified).toBeNull();
+        });
+
+        it('emits media=true only when toggled on, omitted (null) when off', async () => {
+            const api = buildApi(okEnvelope());
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            toggleCheckbox('media', true);
+            await flush();
+            expect(paramsOfCall(api, 2).media).toBe(true);
+
+            toggleCheckbox('media', false);
+            await flush();
+            expect(paramsOfCall(api, 3).media).toBeNull();
+        });
+
+        it('resets to page 1 when a filter changes after paging forward', async () => {
+            const api = buildSequencedApi([
+                okEnvelope({ total: 25, page: 1, per_page: 10 }),
+                okEnvelope({ total: 25, page: 2, per_page: 10 }),
+                okEnvelope({ total: 4, page: 1, per_page: 10 }),
+            ]);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            // Go to page 2, then apply a filter — page must reset to 1.
+            document.querySelector('[data-reviews-page="2"]').click();
+            await flush();
+            expect(paramsOfCall(api, 2).page).toBe(2);
+
+            toggleCheckbox('verified', true);
+            await flush();
+            expect(paramsOfCall(api, 3).page).toBe(1);
+            expect(paramsOfCall(api, 3).verified).toBe(true);
+        });
+    });
+
+    describe('pagination', () => {
+        it('renders a page button per page derived from total / per_page', async () => {
+            const api = buildApi(okEnvelope({ total: 25, page: 1, per_page: 10, items: [{ id: 1, rating: 5, date: '2026-01-01' }] }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            // 25 / 10 => ceil 3 numbered pages.
+            const numbered = document.querySelectorAll('[data-page-key="1"], [data-page-key="2"], [data-page-key="3"]');
+            expect(numbered).toHaveLength(3);
+            expect(document.querySelector('[data-reviews-page="2"]')).not.toBeNull();
+            expect(document.querySelector('[data-reviews-page="4"]')).toBeNull();
+        });
+
+        it('hides pagination when a single page covers all results', async () => {
+            const api = buildApi(okEnvelope({ total: 6, page: 1, per_page: 10 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const pagination = document.querySelector('[data-reviews-pagination]');
+            expect(pagination.innerHTML).toBe('');
+            expect(pagination.style.visibility).toBe('hidden');
+        });
+
+        it('refetches the chosen page on a pagination click', async () => {
+            const api = buildSequencedApi([
+                okEnvelope({ total: 25, page: 1, per_page: 10 }),
+                okEnvelope({ total: 25, page: 3, per_page: 10 }),
+            ]);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-reviews-page="3"]').click();
+            await flush();
+
+            expect(api.getReviews).toHaveBeenCalledTimes(2);
+            expect(paramsOfCall(api, 2).page).toBe(3);
+        });
+
+        it('does not refetch when clicking the already-current page', async () => {
+            const api = buildApi(okEnvelope({ total: 25, page: 1, per_page: 10 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-reviews-page="1"]').click();
+            await flush();
+
+            expect(api.getReviews).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('rating summary constancy under filters', () => {
+        it('keeps the cached unfiltered aggregates when a filter narrows the page', async () => {
+            const api = buildSequencedApi([
+                okEnvelope({ archetype_rating_average: 4.67, archetype_review_count: 36, total: 36 }),
+                // Filtered page reports the SAME archetype aggregates (constant per
+                // §3.2.1) but a smaller `total`; the summary must not change.
+                okEnvelope({ archetype_rating_average: 4.67, archetype_review_count: 36, total: 5 }),
+            ]);
+            const ugc = new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(document.querySelector('.rating-count').textContent).toBe('36 reviews');
+
+            changeSelect('rating', '5');
+            await flush();
+
+            expect(ugc.ratingAverage).toBe(4.67);
+            expect(ugc.reviewCount).toBe(36);
+            expect(document.querySelector('.rating-count').textContent).toBe('36 reviews');
+        });
+
+        it('shows the no-matches state (not no-reviews) when a filter matches nothing but the archetype has reviews', async () => {
+            const api = buildSequencedApi([
+                okEnvelope({ archetype_review_count: 36, total: 36, items: [{ id: 1, rating: 5, date: '2026-01-01' }] }),
+                okEnvelope({ archetype_review_count: 36, total: 0, items: [] }),
+            ]);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            changeSelect('rating', '1');
+            await flush();
+
+            expect(document.querySelector('.cs-reviews-empty').textContent)
+                .toContain('No reviews match');
+        });
+    });
+
+    it('removes toolbar and pagination listeners on destroy', async () => {
+        const api = buildApi(okEnvelope({ total: 25, page: 1, per_page: 10 }));
+        const ugc = new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        ugc.destroy();
+
+        // After destroy a sort change must not trigger a refetch.
+        changeSelect('sort', 'rating_desc');
+        await flush();
         expect(api.getReviews).toHaveBeenCalledTimes(1);
     });
 });
