@@ -12,6 +12,8 @@ import ProductMessages from './ui/productMessages';
 import Badges from './ui/badges';
 import BlemProducts from './ui/blemProducts';
 import SchemaManager from './ui/schemaManager';
+import UgcProduct from './ui/ugcProduct';
+import ugcApi from '../global/ugcApi';
 import { resolveUrlToSelection } from './utils/urlResolver';
 
 export default class ProductController {
@@ -72,6 +74,7 @@ export default class ProductController {
             this.badges = new Badges(this.stateManager);
             this.blemProducts = new BlemProducts(this.stateManager);
             this.schemaManager = new SchemaManager(this.stateManager);
+            this.ugcProduct = new UgcProduct(this.context.productId, this.stateManager, ugcApi);
 
             this.unsubscribeLocal = this.stateManager.subscribe(this.handleLocalStateChange.bind(this));
 
@@ -165,5 +168,6 @@ export default class ProductController {
         if (this.unsubscribeGlobal) this.unsubscribeGlobal();
         if (this.unsubscribeLocal) this.unsubscribeLocal();
         if (this.schemaManager) this.schemaManager.destroy();
+        if (this.ugcProduct) this.ugcProduct.destroy();
     }
 }
