@@ -39,12 +39,31 @@
  * sort and filters are preserved across the transition; only the page resets to
  * 1, since the relevance ordering shifts.
  *
- * The submission modal (#8) is a separate slice and intentionally out of scope.
+ * Slice 6e (#8) adds the submission modal: review and question forms posted to
+ * POST /api/reviews and POST /api/questions via ugcApi (SRS §3.2.4, §3.2.5). Each
+ * form carries the three spam-protection layers (SRS §3.4.5): a visually hidden
+ * `website` honeypot (CSS-hidden, NOT type=hidden), a Cloudflare Turnstile widget
+ * producing `cf_turnstile_token`, and client-side required-field validation. The
+ * Turnstile site key is config-driven (theme_settings.ugc_turnstile_site_key on
+ * the widget container's data-ugc-turnstile-sitekey attribute); the Cloudflare
+ * always-passes test key is the dev fallback when no prod key is configured
+ * (HITL #13 is a cutover gate, not a dev blocker). Submission outcomes are
+ * surfaced inline per the §3.6 status branches normalized by ugcApi.
+ *
+ * Media upload (#9) and verified-purchaser token capture (#10) are separate
+ * slices and intentionally out of scope here.
  */
 
 const MAX_STARS = 5;
 
 const DEFAULT_SORT = 'date_desc';
+
+// Cloudflare Turnstile always-passes test site key (SRS dev environment / issue
+// #8). Used as the dev fallback when no prod key is configured on the widget
+// container. The prod key is config-driven and never hardcoded.
+const TURNSTILE_TEST_SITE_KEY = '1x00000000000000000000AA';
+
+const TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 
 const SORT_VALUES = ['date_desc', 'date_asc', 'rating_desc', 'rating_asc'];
 
@@ -58,6 +77,9 @@ const MESSAGES = {
     noQuestions: 'No questions yet. Be the first to ask about this product.',
     questionsError: 'Questions are unavailable right now. Please try again later.',
     anonymous: 'Anonymous',
+    requiredError: 'Please fill in all required fields.',
+    turnstileError: 'Please complete the verification challenge.',
+    submitting: 'Submitting…',
 };
 
 export default class UgcProduct {
@@ -112,6 +134,17 @@ export default class UgcProduct {
         this.sortAlias = null;
         this.reviewsLoaded = false;
 
+        // The vehicle label of the currently selected alias, kept in sync from
+        // StateManager so a submission can default `vehicle_label` to it (SRS
+        // §3.2.4, §3.2.5 — both optional). Null when no alias is selected.
+        this.vehicleLabel = null;
+
+        // Turnstile widget ids returned by window.turnstile.render, per modal.
+        // Tracked so the widget is rendered once and reset after each submit.
+        this.reviewTurnstileId = null;
+        this.questionTurnstileId = null;
+        this.turnstileScriptPromise = null;
+
         this.ratingElement = document.querySelector('[data-product-rating]');
         this.listElement = document.querySelector('#product-reviews');
         this.toolbarElement = document.querySelector('[data-reviews-toolbar]');
@@ -121,16 +154,28 @@ export default class UgcProduct {
         this.questionsToolbarElement = document.querySelector('[data-questions-toolbar]');
         this.questionsPaginationElement = document.querySelector('[data-questions-pagination]');
 
+        this.reviewModalElement = document.querySelector('[data-review-modal]');
+        this.reviewFormElement = document.querySelector('[data-review-form]');
+        this.questionModalElement = document.querySelector('[data-question-modal]');
+        this.questionFormElement = document.querySelector('[data-question-form]');
+
         this.onToolbarChange = this.onToolbarChange.bind(this);
         this.onPaginationClick = this.onPaginationClick.bind(this);
         this.onQuestionsToolbarChange = this.onQuestionsToolbarChange.bind(this);
         this.onQuestionsPaginationClick = this.onQuestionsPaginationClick.bind(this);
+        this.onReviewModalClick = this.onReviewModalClick.bind(this);
+        this.onQuestionModalClick = this.onQuestionModalClick.bind(this);
+        this.onReviewSubmit = this.onReviewSubmit.bind(this);
+        this.onQuestionSubmit = this.onQuestionSubmit.bind(this);
+        this.onReviewOpenClick = this.onReviewOpenClick.bind(this);
+        this.onQuestionOpenClick = this.onQuestionOpenClick.bind(this);
 
         const hasReviewsDom = this.ratingElement || this.listElement;
 
         if (this.archetypeId && (hasReviewsDom || this.questionsElement)) {
             this.unsubscribe = this.stateManager.subscribe(this.update.bind(this));
             this.bindControls();
+            this.bindModals();
 
             if (hasReviewsDom) {
                 this.init();
@@ -157,6 +202,389 @@ export default class UgcProduct {
 
         if (this.questionsPaginationElement) {
             this.questionsPaginationElement.addEventListener('click', this.onQuestionsPaginationClick);
+        }
+    }
+
+    /**
+     * Wire the review and question submission modals: open triggers, overlay /
+     * close-button dismissal (delegated off the modal root), and form submit.
+     */
+    bindModals() {
+        const reviewOpen = document.querySelector('[data-review-modal-open]');
+        if (reviewOpen && this.reviewModalElement) {
+            reviewOpen.addEventListener('click', this.onReviewOpenClick);
+            this.reviewModalElement.addEventListener('click', this.onReviewModalClick);
+        }
+
+        if (this.reviewFormElement) {
+            this.reviewFormElement.addEventListener('submit', this.onReviewSubmit);
+        }
+
+        const questionOpen = document.querySelector('[data-question-modal-open]');
+        if (questionOpen && this.questionModalElement) {
+            questionOpen.addEventListener('click', this.onQuestionOpenClick);
+            this.questionModalElement.addEventListener('click', this.onQuestionModalClick);
+        }
+
+        if (this.questionFormElement) {
+            this.questionFormElement.addEventListener('submit', this.onQuestionSubmit);
+        }
+    }
+
+    onReviewOpenClick() {
+        this.openModal(this.reviewModalElement, this.reviewFormElement);
+        this.renderTurnstile('review');
+    }
+
+    onQuestionOpenClick() {
+        this.openModal(this.questionModalElement, this.questionFormElement);
+        this.renderTurnstile('question');
+    }
+
+    onReviewModalClick(event) {
+        if (event.target.closest('[data-review-modal-close]')) {
+            this.closeModal(this.reviewModalElement);
+        }
+    }
+
+    onQuestionModalClick(event) {
+        if (event.target.closest('[data-question-modal-close]')) {
+            this.closeModal(this.questionModalElement);
+        }
+    }
+
+    /**
+     * Reveal a submission modal. Clears any prior error/success state and the
+     * field values so a reopened modal starts fresh. Uses the `hidden` attribute
+     * (not display:none in JS) so the styled overlay handles presentation.
+     * @param {HTMLElement} modal
+     * @param {HTMLFormElement} form
+     */
+    openModal(modal, form) {
+        if (!modal) {
+            return;
+        }
+
+        if (form) {
+            form.reset();
+        }
+
+        this._setError(modal, '');
+        this._setSuccess(modal, false);
+        this._setFieldsHidden(modal, false);
+        this._prefillVehicle(form);
+
+        modal.hidden = false;
+    }
+
+    closeModal(modal) {
+        if (modal) {
+            modal.hidden = true;
+        }
+    }
+
+    /**
+     * Default the optional vehicle_label input to the selected alias's vehicle
+     * label, when present (SRS §3.2.4, §3.2.5). The user can still edit or clear it.
+     * @param {HTMLFormElement} form
+     */
+    _prefillVehicle(form) {
+        if (!form || !this.vehicleLabel) {
+            return;
+        }
+
+        const input = form.querySelector('[name="vehicle_label"]');
+        if (input) {
+            input.value = this.vehicleLabel;
+        }
+    }
+
+    async onReviewSubmit(event) {
+        event.preventDefault();
+
+        const modal = this.reviewModalElement;
+        const fields = this._readFields(this.reviewFormElement);
+
+        if (!fields.rating || !fields.title || !fields.body || !fields.author) {
+            this._setError(modal, MESSAGES.requiredError);
+            return;
+        }
+
+        const token = this.getTurnstileToken('review');
+        if (!token) {
+            this._setError(modal, MESSAGES.turnstileError);
+            return;
+        }
+
+        const payload = this.buildReviewPayload(fields, token);
+        await this._submit(modal, () => this.api.postReview(payload), 'review');
+    }
+
+    async onQuestionSubmit(event) {
+        event.preventDefault();
+
+        const modal = this.questionModalElement;
+        const fields = this._readFields(this.questionFormElement);
+
+        if (!fields.body || !fields.author) {
+            this._setError(modal, MESSAGES.requiredError);
+            return;
+        }
+
+        const token = this.getTurnstileToken('question');
+        if (!token) {
+            this._setError(modal, MESSAGES.turnstileError);
+            return;
+        }
+
+        const payload = this.buildQuestionPayload(fields, token);
+        await this._submit(modal, () => this.api.postQuestion(payload), 'question');
+    }
+
+    /**
+     * Shape the review submission body to the frozen SRS §3.2.4 contract. Optional
+     * fields (`alias_id`, `vehicle_label`) are included only when present so the
+     * API receives a clean body; the honeypot `website` and `cf_turnstile_token`
+     * are always sent. Verified-purchaser `ugc_token` and `media_urls` are added by
+     * separate slices (#9, #10) and intentionally omitted here.
+     * @param {Object} fields
+     * @param {string} token
+     * @returns {Object}
+     */
+    buildReviewPayload(fields, token) {
+        const payload = {
+            archetype_id: this.archetypeId,
+            author: fields.author,
+            rating: parseInt(fields.rating, 10),
+            title: fields.title,
+            body: fields.body,
+            cf_turnstile_token: token,
+            website: fields.website,
+        };
+
+        if (this.sortAlias !== null) {
+            payload.alias_id = this.sortAlias;
+        }
+
+        if (fields.vehicle_label) {
+            payload.vehicle_label = fields.vehicle_label;
+        }
+
+        return payload;
+    }
+
+    /**
+     * Shape the question submission body to the frozen SRS §3.2.5 contract.
+     * @param {Object} fields
+     * @param {string} token
+     * @returns {Object}
+     */
+    buildQuestionPayload(fields, token) {
+        const payload = {
+            archetype_id: this.archetypeId,
+            author: fields.author,
+            body: fields.body,
+            cf_turnstile_token: token,
+            website: fields.website,
+        };
+
+        if (this.sortAlias !== null) {
+            payload.alias_id = this.sortAlias;
+        }
+
+        if (fields.vehicle_label) {
+            payload.vehicle_label = fields.vehicle_label;
+        }
+
+        return payload;
+    }
+
+    /**
+     * Run a submission request, manage the submitting/disabled state, and surface
+     * the outcome. On success the form is replaced by the success state; on
+     * failure the §3.6 message normalized by ugcApi (429 → too-many, 400/422 →
+     * the API `error` envelope, 500/network → generic) is shown inline and the
+     * Turnstile widget is reset so the user can retry with a fresh token.
+     * @param {HTMLElement} modal
+     * @param {Function} request - Returns the ugcApi result promise.
+     * @param {string} kind - 'review' | 'question'.
+     */
+    async _submit(modal, request, kind) {
+        this._setError(modal, '');
+        this._setSubmitting(modal, true);
+
+        const result = await request();
+
+        this._setSubmitting(modal, false);
+
+        if (result.ok) {
+            this._setFieldsHidden(modal, true);
+            this._setSuccess(modal, true);
+            return;
+        }
+
+        this._setError(modal, result.message || MESSAGES.requiredError);
+        this.resetTurnstile(kind);
+    }
+
+    /**
+     * Read the submission form's named fields, trimming text values. Returns a
+     * flat object keyed by field name (rating/title/body/author/vehicle_label/
+     * website); absent fields resolve to ''.
+     * @param {HTMLFormElement} form
+     * @returns {Object}
+     */
+    _readFields(form) {
+        const fields = {};
+        if (!form) {
+            return fields;
+        }
+
+        const names = ['rating', 'title', 'body', 'author', 'vehicle_label', 'website'];
+        names.forEach((name) => {
+            const input = form.querySelector(`[name="${name}"]`);
+            fields[name] = input ? input.value.trim() : '';
+        });
+
+        return fields;
+    }
+
+    _setError(modal, message) {
+        if (!modal) {
+            return;
+        }
+
+        const el = modal.querySelector('[data-review-error], [data-question-error]');
+        if (el) {
+            el.textContent = message;
+            el.hidden = !message;
+        }
+    }
+
+    _setSuccess(modal, show) {
+        if (!modal) {
+            return;
+        }
+
+        const el = modal.querySelector('[data-review-success], [data-question-success]');
+        if (el) {
+            el.hidden = !show;
+        }
+    }
+
+    _setFieldsHidden(modal, hidden) {
+        if (!modal) {
+            return;
+        }
+
+        const el = modal.querySelector('[data-review-fields], [data-question-fields]');
+        if (el) {
+            el.hidden = hidden;
+        }
+    }
+
+    _setSubmitting(modal, submitting) {
+        if (!modal) {
+            return;
+        }
+
+        const button = modal.querySelector('[data-review-submit], [data-question-submit]');
+        if (button) {
+            button.disabled = submitting;
+        }
+    }
+
+    /**
+     * Resolve the configured Turnstile site key for a modal, falling back to the
+     * Cloudflare always-passes test key when no prod key is configured (HITL #13
+     * cutover gate; SRS §3.4.5, issue #8). The prod key is never hardcoded — it
+     * arrives via theme_settings on the widget container's data attribute.
+     * @param {HTMLElement} container
+     * @returns {string}
+     */
+    _resolveSiteKey(container) {
+        const configured = container && container.dataset
+            ? (container.dataset.ugcTurnstileSitekey || '').trim()
+            : '';
+        return configured || TURNSTILE_TEST_SITE_KEY;
+    }
+
+    /**
+     * Lazily inject the Cloudflare Turnstile API script (explicit-render mode) and
+     * render the widget for the given modal once. No-ops in environments without a
+     * widget container or document (e.g. tests), where the token is read directly
+     * off the form field instead.
+     * @param {string} kind - 'review' | 'question'.
+     */
+    renderTurnstile(kind) {
+        const container = document.querySelector(`[data-${kind}-turnstile]`);
+        if (!container) {
+            return;
+        }
+
+        const idKey = kind === 'review' ? 'reviewTurnstileId' : 'questionTurnstileId';
+        if (this[idKey] !== null) {
+            return;
+        }
+
+        this._loadTurnstileScript().then(() => {
+            if (!window.turnstile || this[idKey] !== null) {
+                return;
+            }
+
+            this[idKey] = window.turnstile.render(container, {
+                sitekey: this._resolveSiteKey(container),
+            });
+        }).catch(() => {});
+    }
+
+    _loadTurnstileScript() {
+        if (window.turnstile) {
+            return Promise.resolve();
+        }
+
+        if (this.turnstileScriptPromise) {
+            return this.turnstileScriptPromise;
+        }
+
+        this.turnstileScriptPromise = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = TURNSTILE_SCRIPT_URL;
+            script.async = true;
+            script.defer = true;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+
+        return this.turnstileScriptPromise;
+    }
+
+    /**
+     * Read the Turnstile token for a modal: prefer the live widget response,
+     * falling back to the form's `cf_turnstile_token` field (which the widget
+     * populates, and which tests can seed directly).
+     * @param {string} kind - 'review' | 'question'.
+     * @returns {string}
+     */
+    getTurnstileToken(kind) {
+        const idKey = kind === 'review' ? 'reviewTurnstileId' : 'questionTurnstileId';
+        if (window.turnstile && this[idKey] !== null) {
+            const response = window.turnstile.getResponse(this[idKey]);
+            if (response) {
+                return response;
+            }
+        }
+
+        const form = kind === 'review' ? this.reviewFormElement : this.questionFormElement;
+        const field = form ? form.querySelector('[name="cf_turnstile_token"]') : null;
+        return field ? field.value.trim() : '';
+    }
+
+    resetTurnstile(kind) {
+        const idKey = kind === 'review' ? 'reviewTurnstileId' : 'questionTurnstileId';
+        if (window.turnstile && this[idKey] !== null) {
+            window.turnstile.reset(this[idKey]);
         }
     }
 
@@ -234,7 +662,24 @@ export default class UgcProduct {
             this.renderSummary();
         }
 
+        this.vehicleLabel = this._resolveVehicleLabel(state);
         this.applyAliasSort(state);
+    }
+
+    /**
+     * Pull a human-readable vehicle label off the selected alias to pre-fill the
+     * optional `vehicle_label` submission field (SRS §3.2.4, §3.2.5). Returns null
+     * when no alias is selected or the field is absent.
+     * @param {Object} [state] - The local StateManager snapshot.
+     * @returns {string|null}
+     */
+    _resolveVehicleLabel(state) {
+        const aliasData = state && state.aliasData;
+        if (!aliasData || !aliasData.vehicle_label) {
+            return null;
+        }
+
+        return String(aliasData.vehicle_label);
     }
 
     /**
@@ -687,6 +1132,32 @@ export default class UgcProduct {
 
         if (this.questionsPaginationElement) {
             this.questionsPaginationElement.removeEventListener('click', this.onQuestionsPaginationClick);
+        }
+
+        const reviewOpen = document.querySelector('[data-review-modal-open]');
+        if (reviewOpen) {
+            reviewOpen.removeEventListener('click', this.onReviewOpenClick);
+        }
+
+        if (this.reviewModalElement) {
+            this.reviewModalElement.removeEventListener('click', this.onReviewModalClick);
+        }
+
+        if (this.reviewFormElement) {
+            this.reviewFormElement.removeEventListener('submit', this.onReviewSubmit);
+        }
+
+        const questionOpen = document.querySelector('[data-question-modal-open]');
+        if (questionOpen) {
+            questionOpen.removeEventListener('click', this.onQuestionOpenClick);
+        }
+
+        if (this.questionModalElement) {
+            this.questionModalElement.removeEventListener('click', this.onQuestionModalClick);
+        }
+
+        if (this.questionFormElement) {
+            this.questionFormElement.removeEventListener('submit', this.onQuestionSubmit);
         }
     }
 }

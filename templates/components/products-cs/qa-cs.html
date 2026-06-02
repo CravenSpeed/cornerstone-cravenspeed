@@ -7,7 +7,51 @@
                 <option value="date_asc">{{lang 'products.questions.sort_oldest'}}</option>
             </select>
         </label>
+        <button type="button" class="button button--primary cs-ugc-submit-open" data-question-modal-open>
+            {{lang 'products.questions.submit.open'}}
+        </button>
     </div>
     <div id="product-questions"></div>
     <div class="cs-questions-pagination" data-questions-pagination></div>
+
+    <div class="cs-ugc-modal" data-question-modal hidden>
+        <div class="cs-ugc-modal-overlay" data-question-modal-close></div>
+        <div class="cs-ugc-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="cs-question-modal-title">
+            <button type="button" class="cs-ugc-modal-close" data-question-modal-close aria-label="{{lang 'products.questions.submit.close'}}">&times;</button>
+            <h4 id="cs-question-modal-title">{{lang 'products.questions.submit.heading'}}</h4>
+            <form class="cs-ugc-form" data-question-form novalidate>
+                <p class="cs-ugc-form-error" data-question-error role="alert" hidden></p>
+                <p class="cs-ugc-form-success" data-question-success hidden>{{lang 'products.questions.submit.success'}}</p>
+
+                <div class="cs-ugc-fields" data-question-fields>
+                    <label class="cs-ugc-field">
+                        <span class="cs-ugc-field-label">{{lang 'products.questions.submit.body_label'}} *</span>
+                        <textarea class="cs-ugc-input" name="body" data-question-field="body" rows="5" required></textarea>
+                    </label>
+                    <label class="cs-ugc-field">
+                        <span class="cs-ugc-field-label">{{lang 'products.questions.submit.author_label'}} *</span>
+                        <input class="cs-ugc-input" type="text" name="author" data-question-field="author" maxlength="60" required>
+                    </label>
+                    <label class="cs-ugc-field">
+                        <span class="cs-ugc-field-label">{{lang 'products.questions.submit.vehicle_label'}}</span>
+                        <input class="cs-ugc-input" type="text" name="vehicle_label" data-question-field="vehicle_label">
+                    </label>
+
+                    <label class="cs-ugc-honeypot" aria-hidden="true">
+                        <span>{{lang 'products.questions.submit.website_label'}}</span>
+                        <input type="text" name="website" data-question-field="website" tabindex="-1" autocomplete="off">
+                    </label>
+
+                    <div class="cs-ugc-turnstile" data-question-turnstile data-ugc-turnstile-sitekey="{{theme_settings.ugc_turnstile_site_key}}"></div>
+                    <input type="hidden" name="cf_turnstile_token" data-question-field="cf_turnstile_token">
+
+                    <div class="cs-ugc-form-footer">
+                        <button type="submit" class="button button--primary" data-question-submit>
+                            {{lang 'products.questions.submit.submit_value'}}
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
