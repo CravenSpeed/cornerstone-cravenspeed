@@ -63,6 +63,17 @@ describe('ProductGrid card ratings (SRS §3.5)', () => {
             .toBe('Rated 5 out of 5 stars, based on 1 review');
     });
 
+    it('renders stars without a count when review_count is missing', () => {
+        const container = renderOne({ rating_average: 4.6 });
+        const ratingEl = container.querySelector('.cs-card-rating');
+
+        expect(ratingEl).not.toBeNull();
+        // No "undefined reviews" — the count span is dropped and the label
+        // falls back to the stars-only form.
+        expect(container.querySelector('.cs-card-rating-count')).toBeNull();
+        expect(ratingEl.getAttribute('aria-label')).toBe('Rated 4.6 out of 5 stars');
+    });
+
     it('omits the star block when rating_average is null', () => {
         const container = renderOne({ rating_average: null, review_count: 0 });
 

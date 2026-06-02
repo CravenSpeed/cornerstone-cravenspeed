@@ -124,13 +124,16 @@ export default class ProductGrid {
         if (average === null || average === undefined) return '';
 
         const count = product.review_count;
+        const hasCount = typeof count === 'number';
         const countLabel = count === 1 ? '1 review' : `${count} reviews`;
-        const label = `Rated ${average} out of ${MAX_STARS} stars, based on ${countLabel}`;
+        const label = hasCount
+            ? `Rated ${average} out of ${MAX_STARS} stars, based on ${countLabel}`
+            : `Rated ${average} out of ${MAX_STARS} stars`;
 
         return `
             <span class="cs-card-rating" role="img" aria-label="${label}">
                 ${this._buildStars(average)}
-                <span class="cs-card-rating-count">${countLabel}</span>
+                ${hasCount ? `<span class="cs-card-rating-count">${countLabel}</span>` : ''}
             </span>
         `;
     }
