@@ -1269,3 +1269,207 @@ describe('UgcProduct (slice 6e — submission modal)', () => {
         expect(document.querySelector('[data-review-modal]').hidden).toBe(true);
     });
 });
+
+describe('UgcProduct (slice 6f — verified-purchaser token capture)', () => {
+    // Reviews/questions list fetches resolve inertly; validateToken and postReview
+    // are injectable spies for the capture and submit paths.
+    const buildTokenApi = ({
+        validateResult = { ok: true, status: 200, data: { archetype_id: ARCHETYPE_ID, alias_id: 4821 } },
+        postResult = { ok: true, status: 201, data: { id: 1 } },
+    } = {}) => ({
+        getReviews: jest.fn(() => Promise.resolve({ ok: true, status: 200, data: buildEnvelope() })),
+        getQuestions: jest.fn(() => Promise.resolve({
+            ok: true, status: 200, data: { items: [], total: 0, page: 1, per_page: 10 },
+        })),
+        validateToken: jest.fn(() => Promise.resolve(validateResult)),
+        postReview: jest.fn(() => Promise.resolve(postResult)),
+        postQuestion: jest.fn(() => Promise.resolve(postResult)),
+    });
+
+    const mountTokenScaffold = () => {
+        document.body.innerHTML = `
+            <a id="product-rating" data-product-rating></a>
+            <div data-reviews-toolbar>
+                <button type="button" data-review-modal-open>Write a Review</button>
+            </div>
+            <div id="product-reviews"></div>
+            <div data-reviews-pagination></div>
+
+            <div class="cs-ugc-modal" data-review-modal hidden>
+                <div class="cs-ugc-modal-dialog">
+                    <form data-review-form novalidate>
+                        <p data-review-error hidden></p>
+                        <p data-review-success hidden>Thanks!</p>
+                        <div data-review-fields>
+                            <select name="rating" data-review-field="rating">
+                                <option value="">—</option>
+                                <option value="5">5</option>
+                            </select>
+                            <input type="text" name="title" data-review-field="title">
+                            <textarea name="body" data-review-field="body"></textarea>
+                            <input type="text" name="author" data-review-field="author">
+                            <input type="text" name="vehicle_label" data-review-field="vehicle_label">
+                            <label class="cs-ugc-honeypot"><input type="text" name="website" data-review-field="website"></label>
+                            <div data-review-turnstile data-ugc-turnstile-sitekey=""></div>
+                            <input type="hidden" name="cf_turnstile_token" data-review-field="cf_turnstile_token">
+                            <button type="submit" data-review-submit>Submit Review</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+    };
+
+    const setReviewField = (name, value) => {
+        document.querySelector(`[data-review-form] [name="${name}"]`).value = value;
+    };
+
+    const fillReview = (overrides = {}) => {
+        const values = {
+            rating: '5',
+            title: 'Great product',
+            body: 'Really happy with this.',
+            author: 'Jane D.',
+            vehicle_label: '',
+            website: '',
+            cf_turnstile_token: '0.test-token',
+            ...overrides,
+        };
+        Object.keys(values).forEach(name => setReviewField(name, values[name]));
+    };
+
+    const submitReview = () => {
+        fillReview();
+        document.querySelector('[data-review-form]').dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true }),
+        );
+    };
+
+    // Point window.location at a URL carrying the given query string, without a
+    // navigation, then spy on replaceState so the strip can be asserted.
+    const setUrl = (search) => {
+        window.history.replaceState({}, '', `/products/platypus-mount${search}`);
+        return jest.spyOn(window.history, 'replaceState');
+    };
+
+    beforeEach(() => {
+        mountTokenScaffold();
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+        window.history.replaceState({}, '', '/');
+        jest.restoreAllMocks();
+    });
+
+    describe('URL strip (SRS §3.4.1)', () => {
+        it('strips ugc_token from the URL via history.replaceState', async () => {
+            const spy = setUrl('?ugc_token=abc123');
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildTokenApi());
+            await flush();
+
+            expect(spy).toHaveBeenCalled();
+            expect(window.location.search).not.toContain('ugc_token');
+        });
+
+        it('preserves other query params and the path when stripping', async () => {
+            const spy = setUrl('?utm=email&ugc_token=abc123');
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildTokenApi());
+            await flush();
+
+            const newUrl = spy.mock.calls[0][2];
+            expect(newUrl).toBe('/products/platypus-mount?utm=email');
+            expect(window.location.search).toContain('utm=email');
+            expect(window.location.search).not.toContain('ugc_token');
+        });
+
+        it('validates the captured token via GET /api/token/validate', async () => {
+            setUrl('?ugc_token=abc123');
+            const api = buildTokenApi();
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(api.validateToken).toHaveBeenCalledWith('abc123');
+        });
+
+        it('does not touch the URL or validate when no token is present', async () => {
+            const spy = setUrl('');
+            const api = buildTokenApi();
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(api.validateToken).not.toHaveBeenCalled();
+            expect(spy).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('token on submit (SRS §3.2.4)', () => {
+        it('sends ugc_token on review submit after a valid token is captured', async () => {
+            setUrl('?ugc_token=abc123');
+            const api = buildTokenApi();
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            submitReview();
+            await flush();
+
+            expect(api.postReview.mock.calls[0][0].ugc_token).toBe('abc123');
+        });
+    });
+
+    describe('graceful degradation', () => {
+        it('omits ugc_token when the token is invalid/expired (submission proceeds unverified)', async () => {
+            setUrl('?ugc_token=expired');
+            const api = buildTokenApi({
+                validateResult: {
+                    ok: false, status: 400, message: 'Invalid', error: 'Invalid',
+                },
+            });
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            submitReview();
+            await flush();
+
+            expect(api.postReview).toHaveBeenCalledTimes(1);
+            expect(api.postReview.mock.calls[0][0]).not.toHaveProperty('ugc_token');
+        });
+
+        it('still strips an invalid token from the URL', async () => {
+            const spy = setUrl('?ugc_token=expired');
+            const api = buildTokenApi({
+                validateResult: {
+                    ok: false, status: 400, message: 'Invalid', error: 'Invalid',
+                },
+            });
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(spy).toHaveBeenCalled();
+            expect(window.location.search).not.toContain('ugc_token');
+        });
+
+        it('omits ugc_token on submit when no token was in the URL', async () => {
+            setUrl('');
+            const api = buildTokenApi();
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            submitReview();
+            await flush();
+
+            expect(api.postReview.mock.calls[0][0]).not.toHaveProperty('ugc_token');
+        });
+    });
+});

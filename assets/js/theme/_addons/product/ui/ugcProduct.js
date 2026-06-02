@@ -50,8 +50,14 @@
  * (HITL #13 is a cutover gate, not a dev blocker). Submission outcomes are
  * surfaced inline per the §3.6 status branches normalized by ugcApi.
  *
- * Media upload (#9) and verified-purchaser token capture (#10) are separate
- * slices and intentionally out of scope here.
+ * Slice 6f (#10) adds verified-purchaser token capture: when `ugc_token` is in
+ * the URL it is stripped via history.replaceState (SRS §3.4.1) and validated via
+ * GET /api/token/validate (SRS §3.2.8); on success the token is held in memory
+ * and sent as `ugc_token` on review submit so the server sets verified_purchaser
+ * (SRS §3.2.4). An invalid/expired token degrades gracefully — submission still
+ * proceeds, unverified.
+ *
+ * Media upload (#9) is a separate slice and intentionally out of scope here.
  */
 
 const MAX_STARS = 5;
@@ -139,6 +145,13 @@ export default class UgcProduct {
         // §3.2.4, §3.2.5 — both optional). Null when no alias is selected.
         this.vehicleLabel = null;
 
+        // Verified-purchaser token (SRS §3.4.1, §3.2.8). Held in memory for the
+        // session only once GET /api/token/validate confirms it; sent as
+        // `ugc_token` on review submit so the server stamps verified_purchaser=true.
+        // Stays null on absent/invalid/expired token — submission still proceeds,
+        // just unverified.
+        this.verifiedPurchaserToken = null;
+
         // Turnstile widget ids returned by window.turnstile.render, per modal.
         // Tracked so the widget is rendered once and reset after each submit.
         this.reviewTurnstileId = null;
@@ -176,6 +189,7 @@ export default class UgcProduct {
             this.unsubscribe = this.stateManager.subscribe(this.update.bind(this));
             this.bindControls();
             this.bindModals();
+            this.captureVerifiedPurchaserToken();
 
             if (hasReviewsDom) {
                 this.init();
@@ -342,11 +356,54 @@ export default class UgcProduct {
     }
 
     /**
+     * Verified-purchaser token capture (SRS §3.4.1, §3.2.8). If `ugc_token` is
+     * present in the URL, strip it immediately via history.replaceState so it
+     * never lingers in the address bar / shareable URL, then validate it. The
+     * token is held in memory only after GET /api/token/validate confirms it
+     * (HTTP 200); an invalid/expired token (HTTP 400) leaves it null so the
+     * session stays unverified and submission still proceeds.
+     *
+     * The strip happens before the async validate resolves — the contract is
+     * "strip the param", independent of validity — and a held token is never
+     * exposed back into the URL.
+     * @returns {Promise<void>}
+     */
+    async captureVerifiedPurchaserToken() {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('ugc_token');
+
+        if (!token) {
+            return;
+        }
+
+        this.stripTokenFromUrl(params);
+
+        const result = await this.api.validateToken(token);
+        if (result.ok) {
+            this.verifiedPurchaserToken = token;
+        }
+    }
+
+    /**
+     * Remove the `ugc_token` query param from the current URL without a reload,
+     * preserving any other params, path, and hash (SRS §3.4.1).
+     * @param {URLSearchParams} params - Parsed copy of window.location.search.
+     */
+    stripTokenFromUrl(params) {
+        params.delete('ugc_token');
+        const query = params.toString();
+        const { pathname, hash } = window.location;
+        const newUrl = `${pathname}${query ? `?${query}` : ''}${hash}`;
+        window.history.replaceState(window.history.state, '', newUrl);
+    }
+
+    /**
      * Shape the review submission body to the frozen SRS §3.2.4 contract. Optional
-     * fields (`alias_id`, `vehicle_label`) are included only when present so the
-     * API receives a clean body; the honeypot `website` and `cf_turnstile_token`
-     * are always sent. Verified-purchaser `ugc_token` and `media_urls` are added by
-     * separate slices (#9, #10) and intentionally omitted here.
+     * fields (`alias_id`, `vehicle_label`, `ugc_token`) are included only when
+     * present so the API receives a clean body; the honeypot `website` and
+     * `cf_turnstile_token` are always sent. A held verified-purchaser token
+     * (SRS §3.4.1) rides along as `ugc_token` so the server sets
+     * verified_purchaser=true. `media_urls` is added by slice #9.
      * @param {Object} fields
      * @param {string} token
      * @returns {Object}
@@ -368,6 +425,10 @@ export default class UgcProduct {
 
         if (fields.vehicle_label) {
             payload.vehicle_label = fields.vehicle_label;
+        }
+
+        if (this.verifiedPurchaserToken) {
+            payload.ugc_token = this.verifiedPurchaserToken;
         }
 
         return payload;
