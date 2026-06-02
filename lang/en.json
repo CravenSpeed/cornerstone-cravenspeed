@@ -779,6 +779,8 @@
                 "body_label": "Your Review",
                 "author_label": "Your Name",
                 "vehicle_label": "Vehicle (optional)",
+                "media_label": "Photos or Video (optional)",
+                "media_hint": "Up to 3 photos (JPEG, PNG, GIF, WebP — 10 MB each) and 1 video (MP4, MOV — 50 MB).",
                 "website_label": "Leave this field empty",
                 "submit_value": "Submit Review",
                 "submitting": "Submitting…",

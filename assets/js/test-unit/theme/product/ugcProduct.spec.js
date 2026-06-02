@@ -1473,3 +1473,376 @@ describe('UgcProduct (slice 6f — verified-purchaser token capture)', () => {
         });
     });
 });
+
+describe('UgcProduct (slice #9 — media upload flow)', () => {
+    // Reviews/questions list fetches resolve inertly; presign/confirm/postReview
+    // are injectable spies, and mediaPut stands in for the raw PUT to DO Spaces.
+    const buildMediaApi = ({
+        presignResult = {
+            ok: true,
+            status: 200,
+            data: {
+                presigned_url: 'https://spaces.example/raw/abc?sig=1',
+                raw_url: 'https://cdn.example/ugc/media/raw/abc.jpg',
+            },
+        },
+        confirmResult = {
+            ok: true,
+            status: 200,
+            data: {
+                confirmed: true, type: 'photo', url: 'https://cdn.example/ugc/media/uuid/full.jpg', poster_url: null,
+            },
+        },
+        postResult = { ok: true, status: 201, data: { id: 1 } },
+    } = {}) => ({
+        getReviews: jest.fn(() => Promise.resolve({ ok: true, status: 200, data: buildEnvelope() })),
+        getQuestions: jest.fn(() => Promise.resolve({
+            ok: true, status: 200, data: { items: [], total: 0, page: 1, per_page: 10 },
+        })),
+        presignMedia: jest.fn(() => Promise.resolve(presignResult)),
+        confirmMedia: jest.fn(() => Promise.resolve(confirmResult)),
+        postReview: jest.fn(() => Promise.resolve(postResult)),
+        postQuestion: jest.fn(() => Promise.resolve({ ok: true, status: 201, data: { id: 1 } })),
+    });
+
+    const okPut = jest.fn(() => Promise.resolve({ ok: true, status: 200 }));
+
+    // Build a File of an exact byte size without allocating real bytes, so size
+    // limits can be exercised cheaply. jsdom honours the size of the blob parts,
+    // so we pass a single string part of the requested length when small, else a
+    // fake part whose `size` jsdom reads.
+    const makeFile = (name, type, size = 1024) => {
+        const file = new File(['x'], name, { type });
+        Object.defineProperty(file, 'size', { value: size });
+        return file;
+    };
+
+    const mountMediaScaffold = () => {
+        document.body.innerHTML = `
+            <a id="product-rating" data-product-rating></a>
+            <div data-reviews-toolbar>
+                <button type="button" data-review-modal-open>Write a Review</button>
+            </div>
+            <div id="product-reviews"></div>
+            <div data-reviews-pagination></div>
+
+            <div class="cs-ugc-modal" data-review-modal hidden>
+                <div class="cs-ugc-modal-dialog">
+                    <form data-review-form novalidate>
+                        <p data-review-error hidden></p>
+                        <p data-review-success hidden>Thanks!</p>
+                        <div data-review-fields>
+                            <select name="rating" data-review-field="rating">
+                                <option value="">—</option>
+                                <option value="5">5</option>
+                            </select>
+                            <input type="text" name="title" data-review-field="title">
+                            <textarea name="body" data-review-field="body"></textarea>
+                            <input type="text" name="author" data-review-field="author">
+                            <input type="text" name="vehicle_label" data-review-field="vehicle_label">
+                            <input type="file" name="media" data-review-field="media" multiple>
+                            <p data-review-processing hidden></p>
+                            <label class="cs-ugc-honeypot"><input type="text" name="website" data-review-field="website"></label>
+                            <div data-review-turnstile data-ugc-turnstile-sitekey=""></div>
+                            <input type="hidden" name="cf_turnstile_token" data-review-field="cf_turnstile_token">
+                            <button type="submit" data-review-submit>Submit Review</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+    };
+
+    const setReviewField = (name, value) => {
+        document.querySelector(`[data-review-form] [name="${name}"]`).value = value;
+    };
+
+    const fillReview = (overrides = {}) => {
+        const values = {
+            rating: '5',
+            title: 'Great product',
+            body: 'Really happy with this.',
+            author: 'Jane D.',
+            vehicle_label: '',
+            website: '',
+            cf_turnstile_token: '0.test-token',
+            ...overrides,
+        };
+        Object.keys(values).forEach(name => setReviewField(name, values[name]));
+    };
+
+    // Seed the file input's FileList with the given files (FileList is read-only,
+    // so define the `files` property directly).
+    const attachFiles = (files) => {
+        const input = document.querySelector('[data-review-form] [name="media"]');
+        Object.defineProperty(input, 'files', { value: files, configurable: true });
+    };
+
+    const submitReview = () => {
+        document.querySelector('[data-review-form]').dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true }),
+        );
+    };
+
+    beforeEach(() => {
+        mountMediaScaffold();
+        okPut.mockClear();
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    describe('client-side validation (before presign)', () => {
+        it('accepts a valid photo and a valid video', async () => {
+            const api = buildMediaApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            attachFiles([
+                makeFile('a.jpg', 'image/jpeg', 1024),
+                makeFile('clip.mp4', 'video/mp4', 1024),
+            ]);
+            submitReview();
+            await flush();
+
+            // Both files were presigned → validation passed.
+            expect(api.presignMedia).toHaveBeenCalledTimes(2);
+            expect(api.postReview).toHaveBeenCalledTimes(1);
+            expect(document.querySelector('[data-review-error]').hidden).toBe(true);
+        });
+
+        it('rejects an unsupported file type before any presign', async () => {
+            const api = buildMediaApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            attachFiles([makeFile('doc.pdf', 'application/pdf', 1024)]);
+            submitReview();
+            await flush();
+
+            expect(api.presignMedia).not.toHaveBeenCalled();
+            expect(api.postReview).not.toHaveBeenCalled();
+            const error = document.querySelector('[data-review-error]');
+            expect(error.hidden).toBe(false);
+            expect(error.textContent).toContain('Unsupported file type');
+        });
+
+        it('rejects a photo larger than 10 MB', async () => {
+            const api = buildMediaApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            attachFiles([makeFile('big.png', 'image/png', (10 * 1024 * 1024) + 1)]);
+            submitReview();
+            await flush();
+
+            expect(api.presignMedia).not.toHaveBeenCalled();
+            expect(document.querySelector('[data-review-error]').textContent).toContain('10 MB');
+        });
+
+        it('rejects a video larger than 50 MB', async () => {
+            const api = buildMediaApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            attachFiles([makeFile('big.mov', 'video/quicktime', (50 * 1024 * 1024) + 1)]);
+            submitReview();
+            await flush();
+
+            expect(api.presignMedia).not.toHaveBeenCalled();
+            expect(document.querySelector('[data-review-error]').textContent).toContain('50 MB');
+        });
+
+        it('rejects more than 3 photos', async () => {
+            const api = buildMediaApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            attachFiles([
+                makeFile('1.jpg', 'image/jpeg', 1024),
+                makeFile('2.jpg', 'image/jpeg', 1024),
+                makeFile('3.jpg', 'image/jpeg', 1024),
+                makeFile('4.jpg', 'image/jpeg', 1024),
+            ]);
+            submitReview();
+            await flush();
+
+            expect(api.presignMedia).not.toHaveBeenCalled();
+            expect(document.querySelector('[data-review-error]').textContent).toContain('up to 3 photos');
+        });
+
+        it('rejects more than 1 video', async () => {
+            const api = buildMediaApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            attachFiles([
+                makeFile('a.mp4', 'video/mp4', 1024),
+                makeFile('b.mov', 'video/quicktime', 1024),
+            ]);
+            submitReview();
+            await flush();
+
+            expect(api.presignMedia).not.toHaveBeenCalled();
+            expect(document.querySelector('[data-review-error]').textContent).toContain('up to 1 video');
+        });
+    });
+
+    describe('upload pipeline (presign → PUT → confirm)', () => {
+        it('runs presign, raw PUT, then confirm for each file', async () => {
+            const api = buildMediaApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            const file = makeFile('a.jpg', 'image/jpeg', 1024);
+            attachFiles([file]);
+            submitReview();
+            await flush();
+
+            expect(api.presignMedia).toHaveBeenCalledWith(file);
+            // Raw PUT targets the absolute presigned URL, not ugcApi's base.
+            expect(okPut).toHaveBeenCalledWith(
+                'https://spaces.example/raw/abc?sig=1',
+                expect.objectContaining({ method: 'PUT', body: file }),
+            );
+            expect(api.confirmMedia).toHaveBeenCalledWith('https://cdn.example/ugc/media/raw/abc.jpg');
+        });
+
+        it('aborts the submit when a raw PUT fails', async () => {
+            const failingPut = jest.fn(() => Promise.resolve({ ok: false, status: 403 }));
+            const api = buildMediaApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, failingPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            attachFiles([makeFile('a.jpg', 'image/jpeg', 1024)]);
+            submitReview();
+            await flush();
+
+            expect(api.postReview).not.toHaveBeenCalled();
+            expect(document.querySelector('[data-review-error]').textContent).toContain('failed to upload');
+        });
+
+        it('aborts the submit when confirm resolves not-ok', async () => {
+            const api = buildMediaApi({
+                confirmResult: {
+                    ok: false, status: 422, message: 'Media processing failure', error: 'Media processing failure',
+                },
+            });
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            attachFiles([makeFile('a.jpg', 'image/jpeg', 1024)]);
+            submitReview();
+            await flush();
+
+            expect(api.postReview).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('ordered media_urls assembly (SRS §3.4.4)', () => {
+        it('sends media_urls in upload order (photo then video) with index = sort_order', async () => {
+            // Confirm returns a distinct URL per call so order is observable.
+            let confirmCall = 0;
+            const api = buildMediaApi();
+            api.confirmMedia = jest.fn(() => {
+                const urls = [
+                    { ok: true, status: 200, data: { type: 'photo', url: 'https://cdn.example/photo/full.jpg' } },
+                    { ok: true, status: 200, data: { type: 'video', url: 'https://cdn.example/video/video.mp4' } },
+                ];
+                const result = urls[confirmCall];
+                confirmCall += 1;
+                return Promise.resolve(result);
+            });
+
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            attachFiles([
+                makeFile('photo.jpg', 'image/jpeg', 1024),
+                makeFile('clip.mp4', 'video/mp4', 1024),
+            ]);
+            submitReview();
+            await flush();
+
+            expect(api.postReview.mock.calls[0][0].media_urls).toEqual([
+                'https://cdn.example/photo/full.jpg',
+                'https://cdn.example/video/video.mp4',
+            ]);
+        });
+
+        it('omits media_urls entirely when no files are attached', async () => {
+            const api = buildMediaApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            submitReview();
+            await flush();
+
+            expect(api.presignMedia).not.toHaveBeenCalled();
+            expect(api.postReview.mock.calls[0][0]).not.toHaveProperty('media_urls');
+        });
+    });
+
+    describe('"Processing…" state', () => {
+        it('shows the processing state during confirm and clears it after', async () => {
+            // Hold confirm open so the processing state is observable mid-flight.
+            let resolveConfirm;
+            const api = buildMediaApi();
+            api.confirmMedia = jest.fn(() => new Promise((resolve) => { resolveConfirm = resolve; }));
+
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            attachFiles([makeFile('a.jpg', 'image/jpeg', 1024)]);
+            submitReview();
+            await flush();
+
+            const processing = document.querySelector('[data-review-processing]');
+            expect(processing.hidden).toBe(false);
+            expect(processing.textContent).toContain('Processing');
+
+            resolveConfirm({ ok: true, status: 200, data: { type: 'photo', url: 'https://cdn.example/full.jpg' } });
+            await flush();
+
+            expect(processing.hidden).toBe(true);
+        });
+
+        it('does not show the processing state when no files are attached', async () => {
+            const api = buildMediaApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, okPut);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            submitReview();
+            await flush();
+
+            expect(document.querySelector('[data-review-processing]').hidden).toBe(true);
+        });
+    });
+});
