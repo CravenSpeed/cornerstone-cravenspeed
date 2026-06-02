@@ -922,3 +922,350 @@ describe('UgcProduct (slice 6d — alias-aware sort)', () => {
         expect(api.getReviews).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('UgcProduct (slice 6e — submission modal)', () => {
+    // A reviews + questions api that resolves both list fetches inertly, plus
+    // injectable postReview/postQuestion spies for the submission paths.
+    const buildSubmitApi = (postResult = { ok: true, status: 201, data: { id: 1 } }) => ({
+        getReviews: jest.fn(() => Promise.resolve({ ok: true, status: 200, data: buildEnvelope() })),
+        getQuestions: jest.fn(() => Promise.resolve({
+            ok: true, status: 200, data: { items: [], total: 0, page: 1, per_page: 10 },
+        })),
+        postReview: jest.fn(() => Promise.resolve(postResult)),
+        postQuestion: jest.fn(() => Promise.resolve(postResult)),
+    });
+
+    const mountModalScaffold = () => {
+        document.body.innerHTML = `
+            <a id="product-rating" data-product-rating></a>
+            <div data-reviews-toolbar>
+                <button type="button" data-review-modal-open>Write a Review</button>
+            </div>
+            <div id="product-reviews"></div>
+            <div data-reviews-pagination></div>
+
+            <div class="cs-ugc-modal" data-review-modal hidden>
+                <div data-review-modal-close></div>
+                <div class="cs-ugc-modal-dialog">
+                    <button type="button" data-review-modal-close>x</button>
+                    <h4>Write a Review</h4>
+                    <form data-review-form novalidate>
+                        <p data-review-error hidden></p>
+                        <p data-review-success hidden>Thanks!</p>
+                        <div data-review-fields>
+                            <select name="rating" data-review-field="rating">
+                                <option value="">—</option>
+                                <option value="5">5</option>
+                            </select>
+                            <input type="text" name="title" data-review-field="title">
+                            <textarea name="body" data-review-field="body"></textarea>
+                            <input type="text" name="author" data-review-field="author">
+                            <input type="text" name="vehicle_label" data-review-field="vehicle_label">
+                            <label class="cs-ugc-honeypot"><input type="text" name="website" data-review-field="website"></label>
+                            <div data-review-turnstile data-ugc-turnstile-sitekey=""></div>
+                            <input type="hidden" name="cf_turnstile_token" data-review-field="cf_turnstile_token">
+                            <button type="submit" data-review-submit>Submit Review</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div data-questions-toolbar>
+                <button type="button" data-question-modal-open>Ask a Question</button>
+            </div>
+            <div id="product-questions"></div>
+            <div data-questions-pagination></div>
+
+            <div class="cs-ugc-modal" data-question-modal hidden>
+                <div data-question-modal-close></div>
+                <div class="cs-ugc-modal-dialog">
+                    <button type="button" data-question-modal-close>x</button>
+                    <h4>Ask a Question</h4>
+                    <form data-question-form novalidate>
+                        <p data-question-error hidden></p>
+                        <p data-question-success hidden>Thanks!</p>
+                        <div data-question-fields>
+                            <textarea name="body" data-question-field="body"></textarea>
+                            <input type="text" name="author" data-question-field="author">
+                            <input type="text" name="vehicle_label" data-question-field="vehicle_label">
+                            <label class="cs-ugc-honeypot"><input type="text" name="website" data-question-field="website"></label>
+                            <div data-question-turnstile data-ugc-turnstile-sitekey=""></div>
+                            <input type="hidden" name="cf_turnstile_token" data-question-field="cf_turnstile_token">
+                            <button type="submit" data-question-submit>Submit Question</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+    };
+
+    const setField = (scope, name, value) => {
+        document.querySelector(`[data-${scope}-form] [name="${name}"]`).value = value;
+    };
+
+    // Seed a valid review form with a Turnstile token in the hidden field (the
+    // fallback path read when window.turnstile is absent, as in jsdom).
+    const fillReview = (overrides = {}) => {
+        const values = {
+            rating: '5',
+            title: 'Great product',
+            body: 'Really happy with this.',
+            author: 'Jane D.',
+            vehicle_label: '',
+            website: '',
+            cf_turnstile_token: '0.test-token',
+            ...overrides,
+        };
+        Object.keys(values).forEach(name => setField('review', name, values[name]));
+    };
+
+    const fillQuestion = (overrides = {}) => {
+        const values = {
+            body: 'Does this fit the F56?',
+            author: 'Jane D.',
+            vehicle_label: '',
+            website: '',
+            cf_turnstile_token: '0.test-token',
+            ...overrides,
+        };
+        Object.keys(values).forEach(name => setField('question', name, values[name]));
+    };
+
+    const submitForm = (scope) => {
+        document.querySelector(`[data-${scope}-form]`).dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true }),
+        );
+    };
+
+    beforeEach(() => {
+        mountModalScaffold();
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    describe('opening', () => {
+        it('reveals the review modal on the open trigger', async () => {
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildSubmitApi());
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            expect(document.querySelector('[data-review-modal]').hidden).toBe(false);
+        });
+
+        it('closes the modal when the overlay/close control is clicked', async () => {
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildSubmitApi());
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            document.querySelectorAll('[data-review-modal-close]')[0].click();
+            expect(document.querySelector('[data-review-modal]').hidden).toBe(true);
+        });
+    });
+
+    describe('review payload shaping (SRS §3.2.4)', () => {
+        it('posts the frozen review body with rating as an integer', async () => {
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview({ vehicle_label: 'MINI Cooper F56' });
+            submitForm('review');
+            await flush();
+
+            expect(api.postReview).toHaveBeenCalledWith({
+                archetype_id: ARCHETYPE_ID,
+                author: 'Jane D.',
+                rating: 5,
+                title: 'Great product',
+                body: 'Really happy with this.',
+                cf_turnstile_token: '0.test-token',
+                website: '',
+                vehicle_label: 'MINI Cooper F56',
+            });
+        });
+
+        it('omits optional vehicle_label when blank and alias_id when no alias is selected', async () => {
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            submitForm('review');
+            await flush();
+
+            const payload = api.postReview.mock.calls[0][0];
+            expect(payload).not.toHaveProperty('vehicle_label');
+            expect(payload).not.toHaveProperty('alias_id');
+        });
+
+        it('includes alias_id from the selected alias index', async () => {
+            const stateManager = buildStateManager();
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, stateManager, api);
+            await flush();
+
+            stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            submitForm('review');
+            await flush();
+
+            expect(api.postReview.mock.calls[0][0].alias_id).toBe(4821);
+        });
+
+        it('pre-fills vehicle_label from the selected alias and submits it', async () => {
+            const stateManager = buildStateManager();
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, stateManager, api);
+            await flush();
+
+            stateManager._emit({ aliasData: { qty_alias_index: 4821, vehicle_label: 'MINI Cooper F56' } });
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            expect(document.querySelector('[data-review-form] [name="vehicle_label"]').value)
+                .toBe('MINI Cooper F56');
+
+            fillReview({ vehicle_label: 'MINI Cooper F56' });
+            submitForm('review');
+            await flush();
+
+            expect(api.postReview.mock.calls[0][0].vehicle_label).toBe('MINI Cooper F56');
+        });
+    });
+
+    describe('question payload shaping (SRS §3.2.5)', () => {
+        it('posts the frozen question body', async () => {
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-question-modal-open]').click();
+            fillQuestion();
+            submitForm('question');
+            await flush();
+
+            expect(api.postQuestion).toHaveBeenCalledWith({
+                archetype_id: ARCHETYPE_ID,
+                author: 'Jane D.',
+                body: 'Does this fit the F56?',
+                cf_turnstile_token: '0.test-token',
+                website: '',
+            });
+        });
+    });
+
+    describe('client-side validation', () => {
+        it('blocks a review submission with a missing required field', async () => {
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview({ title: '' });
+            submitForm('review');
+            await flush();
+
+            expect(api.postReview).not.toHaveBeenCalled();
+            const error = document.querySelector('[data-review-error]');
+            expect(error.hidden).toBe(false);
+            expect(error.textContent).toContain('required');
+        });
+
+        it('blocks a submission with no Turnstile token', async () => {
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview({ cf_turnstile_token: '' });
+            submitForm('review');
+            await flush();
+
+            expect(api.postReview).not.toHaveBeenCalled();
+            expect(document.querySelector('[data-review-error]').hidden).toBe(false);
+        });
+
+        it('still sends a non-empty honeypot value so the server can reject it (§3.4.5)', async () => {
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview({ website: 'http://spam.example' });
+            submitForm('review');
+            await flush();
+
+            expect(api.postReview.mock.calls[0][0].website).toBe('http://spam.example');
+        });
+    });
+
+    describe('success state', () => {
+        it('reveals the success message and hides the fields on a 201', async () => {
+            const api = buildSubmitApi({ ok: true, status: 201, data: { id: 99 } });
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            submitForm('review');
+            await flush();
+
+            expect(document.querySelector('[data-review-success]').hidden).toBe(false);
+            expect(document.querySelector('[data-review-fields]').hidden).toBe(true);
+        });
+    });
+
+    describe('error-status surfacing (SRS §3.6)', () => {
+        const cases = [
+            ['429 too-many', {
+                ok: false, status: 429, message: 'You\'ve made too many submissions. Please try again later.', error: null,
+            }],
+            ['400 envelope', {
+                ok: false, status: 400, message: 'Turnstile validation failed', error: 'Turnstile validation failed',
+            }],
+            ['422 envelope', {
+                ok: false, status: 422, message: 'File not found', error: 'File not found',
+            }],
+            ['500 generic', {
+                ok: false, status: 500, message: 'Something went wrong. Please try again.', error: null,
+            }],
+        ];
+
+        it.each(cases)('surfaces the %s message inline and keeps the form visible', async (label, result) => {
+            const api = buildSubmitApi(result);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview();
+            submitForm('review');
+            await flush();
+
+            const error = document.querySelector('[data-review-error]');
+            expect(error.hidden).toBe(false);
+            expect(error.textContent).toBe(result.message);
+            // The fields stay visible so the user can correct and retry.
+            expect(document.querySelector('[data-review-fields]').hidden).toBe(false);
+            expect(document.querySelector('[data-review-success]').hidden).toBe(true);
+        });
+    });
+
+    it('removes modal listeners on destroy', async () => {
+        const api = buildSubmitApi();
+        const ugc = new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        ugc.destroy();
+
+        document.querySelector('[data-review-modal-open]').click();
+        // Listener removed → modal stays hidden.
+        expect(document.querySelector('[data-review-modal]').hidden).toBe(true);
+    });
+});

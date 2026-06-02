@@ -1039,3 +1039,150 @@ $cs-button-height: 50px;
   padding: spacing('half');
   background: stencilColor('color-greyLightest');
 }
+
+// =============================================================================
+// 14. UGC Submission Modal (SRS §3.4.1 / §3.4.5)
+// =============================================================================
+// Review and question submission forms. The modal root is toggled via the
+// `hidden` attribute from ugcProduct.js; when shown it overlays the viewport.
+
+.cs-ugc-submit-open {
+  margin-top: spacing('half');
+
+  @include breakpoint('medium') {
+    margin-top: 0;
+    margin-left: auto;
+  }
+}
+
+.cs-ugc-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: spacing('single');
+  overflow-y: auto;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.cs-ugc-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.cs-ugc-modal-dialog {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 32rem;
+  margin: spacing('single') 0;
+  padding: spacing('double') spacing('single') spacing('single');
+  background: #fff;
+  border-radius: 4px;
+  color: #333;
+
+  @include breakpoint('medium') {
+    padding: spacing('double');
+  }
+
+  h4 {
+    margin: 0 0 spacing('single');
+    padding-right: spacing('double');
+    font-weight: 700;
+    color: #000;
+  }
+}
+
+.cs-ugc-modal-close {
+  position: absolute;
+  top: spacing('half');
+  right: spacing('half');
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #333;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.cs-ugc-fields {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('single');
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.cs-ugc-field {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('quarter');
+}
+
+.cs-ugc-field-label {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.cs-ugc-input {
+  width: 100%;
+  padding: spacing('half');
+  font-size: 1rem;
+  border: 1px solid stencilColor('color-greyLight');
+  border-radius: 2px;
+}
+
+// Honeypot (SRS §3.4.5): present in the DOM and to automated form-fillers, but
+// visually removed via CSS — NOT type=hidden — and pulled from the tab order.
+.cs-ugc-honeypot {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.cs-ugc-turnstile {
+  min-height: 65px;
+}
+
+.cs-ugc-form-error {
+  margin: 0 0 spacing('single');
+  padding: spacing('half');
+  color: #fff;
+  background: stencilColor('color-error');
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.cs-ugc-form-success {
+  margin: 0;
+  padding: spacing('single');
+  background: stencilColor('color-greyLightest');
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.cs-ugc-form-footer {
+  display: flex;
+  justify-content: flex-end;
+}

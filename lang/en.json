@@ -769,13 +769,44 @@
                 "subject": "Review Subject",
                 "comments": "Comments",
                 "submit_value": "Submit Review"
+            },
+            "submit": {
+                "open": "Write a Review",
+                "heading": "Write a Review",
+                "rating_label": "Rating",
+                "rating_required": "Please select a star rating.",
+                "title_label": "Title",
+                "body_label": "Your Review",
+                "author_label": "Your Name",
+                "vehicle_label": "Vehicle (optional)",
+                "website_label": "Leave this field empty",
+                "submit_value": "Submit Review",
+                "submitting": "Submitting…",
+                "success": "Thanks! Your review has been submitted and will appear once approved.",
+                "required_error": "Please fill in all required fields.",
+                "turnstile_error": "Please complete the verification challenge.",
+                "close": "Close"
             }
         },
         "questions": {
             "header": "Q&A",
             "sort_label": "Sort by",
             "sort_newest": "Newest",
-            "sort_oldest": "Oldest"
+            "sort_oldest": "Oldest",
+            "submit": {
+                "open": "Ask a Question",
+                "heading": "Ask a Question",
+                "body_label": "Your Question",
+                "author_label": "Your Name",
+                "vehicle_label": "Vehicle (optional)",
+                "website_label": "Leave this field empty",
+                "submit_value": "Submit Question",
+                "submitting": "Submitting…",
+                "success": "Thanks! Your question has been submitted and will appear once answered.",
+                "required_error": "Please fill in all required fields.",
+                "turnstile_error": "Please complete the verification challenge.",
+                "close": "Close"
+            }
         },
         "videos": {
             "header": "Videos",
