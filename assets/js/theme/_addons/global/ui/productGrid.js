@@ -1,5 +1,7 @@
 import { escapeHtml } from '../search/utils';
 
+const MAX_STARS = 5;
+
 export default class ProductGrid {
     constructor(options) {
         this.options = {
@@ -91,6 +93,7 @@ export default class ProductGrid {
         const url = escapeHtml(product.url);
         const image = escapeHtml(product.image);
         const price = product.price; // Price is already HTML
+        const rating = this._buildRating(product);
 
         return `
             <div class="cs-product-card">
@@ -103,11 +106,44 @@ export default class ProductGrid {
                     <h4 class="cs-card-title">
                         <a href="${url}" class="cs-card-title-link">${title}</a>
                     </h4>
+                    ${rating}
                     <div class="cs-card-price">
                         ${price}
                     </div>
                 </div>
             </div>
         `;
+    }
+
+    // SRS §3.5: cards read rating_average / review_count straight from the
+    // search JSON (baked in by QTY's daily ratings sync, §3.1.4) — no UGC fetch.
+    // rating_average is null (or absent) for archetypes with zero approved
+    // reviews; in that case the star block is omitted entirely ("no reviews yet").
+    _buildRating(product) {
+        const average = product.rating_average;
+        if (average === null || average === undefined) return '';
+
+        const count = product.review_count;
+        const countLabel = count === 1 ? '1 review' : `${count} reviews`;
+        const label = `Rated ${average} out of ${MAX_STARS} stars, based on ${countLabel}`;
+
+        return `
+            <span class="cs-card-rating" role="img" aria-label="${label}">
+                ${this._buildStars(average)}
+                <span class="cs-card-rating-count">${countLabel}</span>
+            </span>
+        `;
+    }
+
+    _buildStars(average) {
+        const rounded = Math.round(average);
+        let stars = '';
+
+        for (let i = 1; i <= MAX_STARS; i += 1) {
+            const modifier = i <= rounded ? 'ratingFull' : 'ratingEmpty';
+            stars += `<span class="icon icon--${modifier}"><svg><use href="#icon-star" /></svg></span>`;
+        }
+
+        return `<span class="cs-card-rating-stars">${stars}</span>`;
     }
 }

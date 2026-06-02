@@ -113,6 +113,14 @@
                 </span>
             </p>
         {{/and}}
+        {{#if rating_average}}
+            <p class="card-text cs-card-rating" data-test-info-type="ugcRating">
+                <span class="rating--small" role="img" aria-label="{{lang 'products.reviews.rating_aria_label' rating_target=name current_rating=rating_average max_rating=5}}">
+                    {{> components/products/ratings rating_target=name rating=rating_average}}
+                </span>
+                <span class="cs-card-rating-count">{{review_count}}</span>
+            </p>
+        {{/if}}
         {{#if brand.name}}
             <p class="card-text" data-test-info-type="brandName">{{brand.name}}</p>
         {{/if}}
