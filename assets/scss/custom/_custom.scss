@@ -521,6 +521,23 @@ img.svg-logo {
     justify-content: space-between;
   }
 
+  .cs-card-rating {
+    display: inline-flex;
+    align-items: center;
+    gap: spacing('quarter');
+    margin: 0 0 spacing('quarter');
+  }
+
+  .cs-card-rating-stars {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .cs-card-rating-count {
+    color: stencilColor('color-textSecondary');
+    font-size: 0.75rem;
+  }
+
   .cs-card-title {
     font-size: stencilNumber('fontSize-root');
     font-weight: fontWeight('normal');
