@@ -57,12 +57,29 @@
  * (SRS §3.2.4). An invalid/expired token degrades gracefully — submission still
  * proceeds, unverified.
  *
- * Media upload (#9) is a separate slice and intentionally out of scope here.
+ * Slice #9 adds the review media-upload flow (SRS §3.4.4, §3.2.6, §3.2.7). Files
+ * attached to the review form are validated client-side (type/size/count) BEFORE
+ * any network call, then per accepted file: POST /api/media/presign → PUT the raw
+ * bytes directly to the returned DO Spaces presigned URL (a raw fetch, NOT through
+ * ugcApi's base) → POST /api/media/confirm. The confirmed canonical `url` + `type`
+ * are held in upload order and sent as the ordered `media_urls` array on review
+ * submit (array index = sort_order; index 0 = first displayed). Media is
+ * reviews-only — questions carry none. The confirm call can take 10-30s for video,
+ * so a "Processing…" state is surfaced (CLS-safe) while it runs.
  */
 
 const MAX_STARS = 5;
 
 const DEFAULT_SORT = 'date_desc';
+
+// Client-side media constraints (SRS §3.4.4). Enforced before any presign so an
+// invalid file never touches the network.
+const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const VIDEO_TYPES = ['video/mp4', 'video/quicktime'];
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const MAX_PHOTOS = 3;
+const MAX_VIDEOS = 1;
 
 // Cloudflare Turnstile always-passes test site key (SRS dev environment / issue
 // #8). Used as the dev fallback when no prod key is configured on the widget
@@ -86,6 +103,13 @@ const MESSAGES = {
     requiredError: 'Please fill in all required fields.',
     turnstileError: 'Please complete the verification challenge.',
     submitting: 'Submitting…',
+    mediaType: 'Unsupported file type. Photos must be JPEG, PNG, GIF, or WebP; video must be MP4 or MOV.',
+    mediaPhotoSize: 'Each photo must be 10 MB or smaller.',
+    mediaVideoSize: 'The video must be 50 MB or smaller.',
+    mediaPhotoCount: 'You can attach up to 3 photos.',
+    mediaVideoCount: 'You can attach up to 1 video.',
+    mediaUploadError: 'A file failed to upload. Please remove it and try again.',
+    mediaProcessing: 'Processing media… this can take up to 30 seconds for video.',
 };
 
 export default class UgcProduct {
@@ -94,11 +118,15 @@ export default class UgcProduct {
      *   JSON's `qty_archetype_id` (= ProductArchetypes.id; SRS §1.3, §3.4.1).
      * @param {Object} stateManager - Local product StateManager.
      * @param {Object} api - The ugcApi helper (injectable for tests).
+     * @param {Function} [mediaPut] - fetch impl for the raw PUT to the DO Spaces
+     *   presigned URL. Bypasses ugcApi's base entirely (the URL is absolute and
+     *   external); injectable so tests never hit the network.
      */
-    constructor(archetypeId, stateManager, api) {
+    constructor(archetypeId, stateManager, api, mediaPut) {
         this.archetypeId = archetypeId;
         this.stateManager = stateManager;
         this.api = api;
+        this.mediaPut = mediaPut || ((...args) => fetch(...args));
         this.unsubscribe = null;
 
         // Cached unfiltered aggregates from the reviews envelope. Constant under
@@ -166,6 +194,11 @@ export default class UgcProduct {
         this.questionsElement = document.querySelector('#product-questions');
         this.questionsToolbarElement = document.querySelector('[data-questions-toolbar]');
         this.questionsPaginationElement = document.querySelector('[data-questions-pagination]');
+
+        // Confirmed media held in upload order (SRS §3.4.4): each entry is the
+        // canonical { url, type } returned by /api/media/confirm. Sent verbatim as
+        // the ordered `media_urls` array on submit; index = sort_order.
+        this.confirmedMedia = [];
 
         this.reviewModalElement = document.querySelector('[data-review-modal]');
         this.reviewFormElement = document.querySelector('[data-review-form]');
@@ -288,6 +321,11 @@ export default class UgcProduct {
         this._setFieldsHidden(modal, false);
         this._prefillVehicle(form);
 
+        if (modal === this.reviewModalElement) {
+            this.confirmedMedia = [];
+            this._setProcessing(false);
+        }
+
         modal.hidden = false;
     }
 
@@ -313,6 +351,168 @@ export default class UgcProduct {
         }
     }
 
+    /**
+     * Gather the files attached to the review form's media input into a plain
+     * ordered array. The input order is the user's intended display order
+     * (SRS §3.4.4). Returns [] when there is no input or no selection.
+     * @returns {File[]}
+     */
+    _collectMediaFiles() {
+        const form = this.reviewFormElement;
+        const input = form ? form.querySelector('[name="media"]') : null;
+        if (!input || !input.files) {
+            return [];
+        }
+
+        return Array.from(input.files);
+    }
+
+    /**
+     * Classify a file as 'photo' / 'video' / null from its MIME type against the
+     * SRS §3.4.4 allowed sets.
+     * @param {File} file
+     * @returns {string|null}
+     */
+    _mediaKind(file) {
+        if (PHOTO_TYPES.indexOf(file.type) !== -1) {
+            return 'photo';
+        }
+
+        if (VIDEO_TYPES.indexOf(file.type) !== -1) {
+            return 'video';
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate the attached files against the SRS §3.4.4 type, size, and count
+     * limits before any presign. Returns the first user-facing error message, or
+     * null when every file is acceptable.
+     * @param {File[]} files
+     * @returns {string|null}
+     */
+    _validateMediaFiles(files) {
+        let photoCount = 0;
+        let videoCount = 0;
+
+        for (let i = 0; i < files.length; i += 1) {
+            const file = files[i];
+            const kind = this._mediaKind(file);
+
+            if (kind === null) {
+                return MESSAGES.mediaType;
+            }
+
+            if (kind === 'photo') {
+                if (file.size > MAX_PHOTO_BYTES) {
+                    return MESSAGES.mediaPhotoSize;
+                }
+                photoCount += 1;
+            } else {
+                if (file.size > MAX_VIDEO_BYTES) {
+                    return MESSAGES.mediaVideoSize;
+                }
+                videoCount += 1;
+            }
+        }
+
+        if (photoCount > MAX_PHOTOS) {
+            return MESSAGES.mediaPhotoCount;
+        }
+
+        if (videoCount > MAX_VIDEOS) {
+            return MESSAGES.mediaVideoCount;
+        }
+
+        return null;
+    }
+
+    /**
+     * Run the presign → PUT → confirm pipeline for each accepted file in order
+     * (SRS §3.4.4 / §3.2.6 / §3.2.7), appending each confirmed { url, type } to
+     * confirmedMedia so upload order is preserved as sort_order. Returns true when
+     * every file confirmed, false on the first failure (leaving the partial set in
+     * confirmedMedia is harmless — submit is aborted by the caller).
+     * @param {File[]} files
+     * @returns {Promise<boolean>}
+     */
+    async _uploadMediaFiles(files) {
+        this.confirmedMedia = [];
+
+        for (let i = 0; i < files.length; i += 1) {
+            // Intentionally sequential: confirm blocks for the duration of the
+            // server-side pipeline (SRS §3.2.7), and one failure must abort the
+            // rest rather than fan out parallel uploads behind it.
+            // eslint-disable-next-line no-await-in-loop
+            const confirmed = await this._uploadOne(files[i]);
+            if (!confirmed) {
+                return false;
+            }
+
+            this.confirmedMedia.push(confirmed);
+        }
+
+        return true;
+    }
+
+    /**
+     * Presign, PUT to DO Spaces, and confirm a single file. The PUT goes directly
+     * to the absolute presigned URL via the injected mediaPut (NOT ugcApi's base).
+     * Resolves to the canonical { url, type } on success, or null on any failure
+     * (presign not-ok, PUT non-2xx / network error, confirm not-ok).
+     * @param {File} file
+     * @returns {Promise<Object|null>}
+     */
+    async _uploadOne(file) {
+        const presign = await this.api.presignMedia(file);
+        if (!presign.ok || !presign.data || !presign.data.presigned_url) {
+            return null;
+        }
+
+        const { presigned_url: presignedUrl, raw_url: rawUrl } = presign.data;
+
+        try {
+            const putResponse = await this.mediaPut(presignedUrl, {
+                method: 'PUT',
+                body: file,
+                headers: { 'Content-Type': file.type },
+            });
+
+            if (!putResponse || !putResponse.ok) {
+                return null;
+            }
+        } catch (error) {
+            return null;
+        }
+
+        const confirm = await this.api.confirmMedia(rawUrl);
+        if (!confirm.ok || !confirm.data || !confirm.data.url) {
+            return null;
+        }
+
+        return { url: confirm.data.url, type: confirm.data.type };
+    }
+
+    /**
+     * Toggle the "Processing…" state during the confirm pipeline (SRS §3.4.4 —
+     * video can take 10-30s). Reveals the always-present, space-reserving status
+     * element via the `hidden` attribute so layout does not shift (CLS-safe).
+     * @param {boolean} processing
+     */
+    _setProcessing(processing) {
+        const modal = this.reviewModalElement;
+        if (!modal) {
+            return;
+        }
+
+        const el = modal.querySelector('[data-review-processing]');
+        if (el) {
+            el.textContent = processing ? MESSAGES.mediaProcessing : '';
+            el.hidden = !processing;
+        }
+    }
+
     async onReviewSubmit(event) {
         event.preventDefault();
 
@@ -328,6 +528,35 @@ export default class UgcProduct {
         if (!token) {
             this._setError(modal, MESSAGES.turnstileError);
             return;
+        }
+
+        // Validate any attached files client-side before touching the network
+        // (SRS §3.4.4). A validation failure surfaces inline and aborts submit.
+        const files = this._collectMediaFiles();
+        const validationError = this._validateMediaFiles(files);
+        if (validationError) {
+            this._setError(modal, validationError);
+            return;
+        }
+
+        // Upload + confirm each accepted file in order, surfacing the "Processing…"
+        // state for the duration. Any per-file failure aborts the whole submit so
+        // the user never posts a review referencing media that never landed.
+        if (files.length) {
+            this._setError(modal, '');
+            this._setSubmitting(modal, true);
+            this._setProcessing(true);
+
+            const uploaded = await this._uploadMediaFiles(files);
+
+            this._setProcessing(false);
+            this._setSubmitting(modal, false);
+
+            if (!uploaded) {
+                this._setError(modal, MESSAGES.mediaUploadError);
+                this.resetTurnstile('review');
+                return;
+            }
         }
 
         const payload = this.buildReviewPayload(fields, token);
@@ -403,7 +632,9 @@ export default class UgcProduct {
      * present so the API receives a clean body; the honeypot `website` and
      * `cf_turnstile_token` are always sent. A held verified-purchaser token
      * (SRS §3.4.1) rides along as `ugc_token` so the server sets
-     * verified_purchaser=true. `media_urls` is added by slice #9.
+     * verified_purchaser=true. Confirmed media (SRS §3.4.4) rides along as the
+     * ordered `media_urls` array — array index = sort_order — and the field is
+     * omitted entirely when no files were attached.
      * @param {Object} fields
      * @param {string} token
      * @returns {Object}
@@ -429,6 +660,10 @@ export default class UgcProduct {
 
         if (this.verifiedPurchaserToken) {
             payload.ugc_token = this.verifiedPurchaserToken;
+        }
+
+        if (this.confirmedMedia.length) {
+            payload.media_urls = this.confirmedMedia.map(media => media.url);
         }
 
         return payload;

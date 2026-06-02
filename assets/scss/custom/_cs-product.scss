@@ -1143,6 +1143,34 @@ $cs-button-height: 50px;
   border-radius: 2px;
 }
 
+.cs-ugc-input--file {
+  padding: spacing('quarter') 0;
+  font-size: 0.875rem;
+  border: 0;
+}
+
+.cs-ugc-field-hint {
+  font-size: 0.75rem;
+  color: stencilColor('color-greyDark');
+}
+
+// Processing state during the media confirm pipeline (SRS §3.4.4). Reserves
+// vertical space so toggling it on/off never shifts the form (CLS-safe): the
+// element keeps its min-height when hidden rather than collapsing to display:none.
+.cs-ugc-processing {
+  min-height: 1.5rem;
+  margin: 0;
+  font-size: 0.875rem;
+  font-style: italic;
+  color: stencilColor('color-greyDark');
+  visibility: visible;
+
+  &[hidden] {
+    display: block;
+    visibility: hidden;
+  }
+}
+
 // Honeypot (SRS §3.4.5): present in the DOM and to automated form-fillers, but
 // visually removed via CSS — NOT type=hidden — and pulled from the tab order.
 .cs-ugc-honeypot {
