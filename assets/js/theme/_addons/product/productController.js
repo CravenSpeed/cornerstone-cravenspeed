@@ -74,7 +74,7 @@ export default class ProductController {
             this.badges = new Badges(this.stateManager);
             this.blemProducts = new BlemProducts(this.stateManager);
             this.schemaManager = new SchemaManager(this.stateManager);
-            this.ugcProduct = new UgcProduct(this.context.productId, this.stateManager, ugcApi);
+            this.ugcProduct = new UgcProduct(archetypeData.qty_archetype_id, this.stateManager, ugcApi);
 
             this.unsubscribeLocal = this.stateManager.subscribe(this.handleLocalStateChange.bind(this));
 

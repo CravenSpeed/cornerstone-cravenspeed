@@ -4,9 +4,11 @@
  * bootstrap, rating-summary override, the reviews list, and server-side sort,
  * filter, and pagination.
  *
- * Initialised by ProductController after archetype data loads, with the
- * archetype id (BigCommerce product.id, injected to context). On init it
- * fetches GET /api/reviews/{archetype_id} via the shared ugcApi helper and:
+ * Initialised by ProductController after archetype data loads, with the QTY
+ * archetype id (`qty_archetype_id` from the archetype JSON — the QTY
+ * ProductArchetypes.id, NOT the BigCommerce product.id; SRS §1.3, §3.1.4). On
+ * init it fetches GET /api/reviews/{archetype_id} via the shared ugcApi helper
+ * and:
  *   - renders the rating summary from the envelope's archetype_rating_average /
  *     archetype_review_count, overriding the (up to 24h stale) archetype-JSON
  *     values for in-page display (SRS §2.2, §3.2.1);
@@ -60,7 +62,8 @@ const MESSAGES = {
 
 export default class UgcProduct {
     /**
-     * @param {number|string} archetypeId - BigCommerce product.id (SRS §3.4.1).
+     * @param {number|string} archetypeId - QTY archetype id, from the archetype
+     *   JSON's `qty_archetype_id` (= ProductArchetypes.id; SRS §1.3, §3.4.1).
      * @param {Object} stateManager - Local product StateManager.
      * @param {Object} api - The ugcApi helper (injectable for tests).
      */
