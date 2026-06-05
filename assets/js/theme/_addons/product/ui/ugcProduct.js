@@ -66,6 +66,19 @@
  * submit (array index = sort_order; index 0 = first displayed). Media is
  * reviews-only — questions carry none. The confirm call can take 10-30s for video,
  * so a "Processing…" state is surfaced (CLS-safe) while it runs.
+ *
+ * Slice #30 adds review media DISPLAY (SRS §3.4.1, §3.2.1): a top-level photo
+ * thumbnail grid between the rating summary and the review/question tabs,
+ * sourced from the media of the fetched reviews, plus a per-review thumbnail
+ * strip inside each review. Each review's `media` array arrives ordered by
+ * sort_order (index 0 first; SRS §3.2.1) and that order is preserved. A media
+ * item's `type` is "photo" or "video" (NOT "image"); the single-thumbnail
+ * fallback chain is thumb_url → poster_url → medium_url → url. The grid caps at
+ * MEDIA_GRID_MAX tiles with a "+N" tile that expands it; clicking any tile opens
+ * the shared lightbox (photo → medium_url/url, video → plays with poster_url as
+ * poster). Both the grid and per-review strips rebuild on every render pass, so
+ * alias-aware refetches stay consistent. Only the §3.2.1 public payload fields
+ * are consumed — never `status` or other internal fields.
  */
 
 const MAX_STARS = 5;
@@ -92,6 +105,10 @@ const SORT_VALUES = ['date_desc', 'date_asc', 'rating_desc', 'rating_asc'];
 
 // Questions support only date sorts (SRS §3.2.2) — no rating/verified/media.
 const QUESTION_SORT_VALUES = ['date_desc', 'date_asc'];
+
+// Top-level photo grid cap (issue #30): at most this many media tiles render
+// before the trailing "+N" tile that expands the grid to show the rest.
+const MEDIA_GRID_MAX = 8;
 
 const MESSAGES = {
     noReviews: 'No reviews yet. Be the first to review this product.',
@@ -195,6 +212,15 @@ export default class UgcProduct {
         this.questionsToolbarElement = document.querySelector('[data-questions-toolbar]');
         this.questionsPaginationElement = document.querySelector('[data-questions-pagination]');
 
+        // Review media display (issue #30, SRS §3.4.1): the top-level thumbnail
+        // grid container and the shared lightbox. gridMedia is the flattened
+        // media of the latest fetched reviews page, rebuilt on every render
+        // pass; gridExpanded tracks the "+N" tile state and resets per pass.
+        this.mediaGridElement = document.querySelector('[data-ugc-media-grid]');
+        this.lightboxElement = document.querySelector('[data-ugc-lightbox]');
+        this.gridMedia = [];
+        this.gridExpanded = false;
+
         // Confirmed media held in upload order (SRS §3.4.4): each entry is the
         // canonical { url, type } returned by /api/media/confirm. Sent verbatim as
         // the ordered `media_urls` array on submit; index = sort_order.
@@ -215,6 +241,8 @@ export default class UgcProduct {
         this.onQuestionSubmit = this.onQuestionSubmit.bind(this);
         this.onReviewOpenClick = this.onReviewOpenClick.bind(this);
         this.onQuestionOpenClick = this.onQuestionOpenClick.bind(this);
+        this.onMediaTileClick = this.onMediaTileClick.bind(this);
+        this.onLightboxClick = this.onLightboxClick.bind(this);
 
         const hasReviewsDom = this.ratingElement || this.listElement;
 
@@ -249,6 +277,20 @@ export default class UgcProduct {
 
         if (this.questionsPaginationElement) {
             this.questionsPaginationElement.addEventListener('click', this.onQuestionsPaginationClick);
+        }
+
+        // Media tile clicks are delegated so per-review strips and the grid
+        // survive every innerHTML re-render without rebinding (issue #30).
+        if (this.listElement) {
+            this.listElement.addEventListener('click', this.onMediaTileClick);
+        }
+
+        if (this.mediaGridElement) {
+            this.mediaGridElement.addEventListener('click', this.onMediaTileClick);
+        }
+
+        if (this.lightboxElement) {
+            this.lightboxElement.addEventListener('click', this.onLightboxClick);
         }
     }
 
@@ -944,7 +986,9 @@ export default class UgcProduct {
         this.perPage = Number.isFinite(data.per_page) ? data.per_page : 0;
         this.query.page = Number.isFinite(data.page) ? data.page : this.query.page;
 
-        this.renderList(Array.isArray(data.items) ? data.items : []);
+        const items = Array.isArray(data.items) ? data.items : [];
+        this.renderList(items);
+        this.renderMediaGrid(items);
         this.renderPagination();
     }
 
@@ -1320,6 +1364,194 @@ export default class UgcProduct {
         return `<button type="button" class="cs-reviews-page${current}" data-reviews-page="${page}" data-page-key="${key}"${aria}${disabledAttr}>${label}</button>`;
     }
 
+    /**
+     * Rebuild the top-level thumbnail grid from the media of the fetched
+     * reviews (issue #30, SRS §3.4.1). Runs on every render pass — including
+     * alias-aware refetches — so the grid always mirrors the current list. The
+     * "+N" expansion collapses back on each rebuild.
+     * @param {Object[]} items - The current page of review objects (§3.2.1).
+     */
+    renderMediaGrid(items) {
+        this.gridExpanded = false;
+        this.gridMedia = this._collectGridMedia(items);
+        this._paintMediaGrid();
+    }
+
+    /**
+     * Flatten the reviews' media arrays into grid entries, preserving review
+     * order and each array's server-supplied sort_order ordering (index 0
+     * first; SRS §3.2.1). Items without a usable `url` are dropped defensively.
+     * @param {Object[]} items
+     * @returns {Object[]} Entries of { media, author }.
+     */
+    _collectGridMedia(items) {
+        const collected = [];
+
+        items.forEach((review) => {
+            const media = Array.isArray(review.media) ? review.media : [];
+            media.forEach((item) => {
+                if (item && item.url) {
+                    collected.push({ media: item, author: review.author });
+                }
+            });
+        });
+
+        return collected;
+    }
+
+    /**
+     * Paint the grid from gridMedia / gridExpanded. Empty media keeps the
+     * container's reserved space but hides it via visibility (CLS rule — the
+     * grid populates async, so it never collapses with display:none). When more
+     * than MEDIA_GRID_MAX items exist and the grid is collapsed, a trailing
+     * "+N" tile expands it in place.
+     */
+    _paintMediaGrid() {
+        if (!this.mediaGridElement) {
+            return;
+        }
+
+        const total = this.gridMedia.length;
+
+        if (!total) {
+            this.mediaGridElement.innerHTML = '';
+            this.mediaGridElement.style.visibility = 'hidden';
+            return;
+        }
+
+        const overflow = !this.gridExpanded && total > MEDIA_GRID_MAX;
+        const visible = overflow ? this.gridMedia.slice(0, MEDIA_GRID_MAX) : this.gridMedia;
+        const tiles = visible.map(entry => this._buildMediaTile(entry.media, entry.author));
+
+        if (overflow) {
+            const hidden = total - MEDIA_GRID_MAX;
+            const label = hidden === 1 ? 'Show 1 more media item' : `Show ${hidden} more media items`;
+            tiles.push(`<button type="button" class="cs-media-tile cs-media-tile--more" data-ugc-media-expand aria-label="${label}">+${hidden}</button>`);
+        }
+
+        this.mediaGridElement.innerHTML = tiles.join('');
+        this.mediaGridElement.style.visibility = 'visible';
+    }
+
+    /**
+     * Build one clickable media tile (shared by the top-level grid and the
+     * per-review strips). The thumbnail uses the §3.2.1 single-thumbnail
+     * fallback chain thumb_url → poster_url → medium_url → url; the dataset
+     * carries what the lightbox needs (photo → medium_url/url, video → url +
+     * poster_url). Photos get descriptive alt text; videos a play affordance
+     * with an aria-label, since the poster image alone names nothing.
+     * @param {Object} media - A §3.2.1 media item.
+     * @param {string} [author] - The owning review's author, for labels.
+     * @returns {string}
+     */
+    _buildMediaTile(media, author) {
+        const isVideo = media.type === 'video';
+        const thumb = media.thumb_url || media.poster_url || media.medium_url || media.url;
+        const src = isVideo ? media.url : (media.medium_url || media.url);
+        const source = author ? `${author}'s review` : 'a customer review';
+        const label = isVideo ? `Video from ${source}` : `Photo from ${source}`;
+        const escapedLabel = this._escapeAttr(label);
+        const common = `data-ugc-media-tile data-ugc-media-type="${isVideo ? 'video' : 'photo'}" data-ugc-media-src="${this._escapeAttr(src)}" data-ugc-media-label="${escapedLabel}"`;
+
+        if (isVideo) {
+            const poster = media.poster_url ? ` data-ugc-media-poster="${this._escapeAttr(media.poster_url)}"` : '';
+            const playLabel = this._escapeAttr(`Play video from ${source}`);
+            return `<button type="button" class="cs-media-tile cs-media-tile--video" ${common}${poster} aria-label="${playLabel}"><img class="cs-media-tile-thumb" src="${this._escapeAttr(thumb)}" alt="" loading="lazy"><span class="cs-media-tile-play" aria-hidden="true"></span></button>`;
+        }
+
+        return `<button type="button" class="cs-media-tile" ${common}><img class="cs-media-tile-thumb" src="${this._escapeAttr(thumb)}" alt="${escapedLabel}" loading="lazy"></button>`;
+    }
+
+    /**
+     * Build the per-review thumbnail strip rendered after the review body
+     * (issue #30). Empty string when the review carries no media, so reviews
+     * without media render exactly as before.
+     * @param {Object} review - A §3.2.1 review object.
+     * @returns {string}
+     */
+    _buildReviewMedia(review) {
+        const media = Array.isArray(review.media) ? review.media : [];
+        const tiles = media
+            .filter(item => item && item.url)
+            .map(item => this._buildMediaTile(item, review.author));
+
+        if (!tiles.length) {
+            return '';
+        }
+
+        return `<div class="cs-review-media">${tiles.join('')}</div>`;
+    }
+
+    /**
+     * Delegated click handler for media tiles in the grid and the per-review
+     * strips. The "+N" tile expands the grid in place; any other tile opens
+     * the lightbox from its dataset.
+     * @param {MouseEvent} event
+     */
+    onMediaTileClick(event) {
+        if (event.target.closest('[data-ugc-media-expand]')) {
+            this.gridExpanded = true;
+            this._paintMediaGrid();
+            return;
+        }
+
+        const tile = event.target.closest('[data-ugc-media-tile]');
+        if (tile) {
+            this.openLightbox(tile.dataset);
+        }
+    }
+
+    onLightboxClick(event) {
+        if (event.target.closest('[data-ugc-lightbox-close]')) {
+            this.closeLightbox();
+        }
+    }
+
+    /**
+     * Show the clicked media large in the shared lightbox: photos render the
+     * medium-size image (already resolved into the tile's dataset), videos play
+     * with the extracted poster frame as poster (SRS §3.2.1). Dataset values
+     * come back browser-decoded, so they are re-escaped here before insertion.
+     * @param {DOMStringMap} dataset - The clicked tile's dataset.
+     */
+    openLightbox(dataset) {
+        const content = this.lightboxElement
+            ? this.lightboxElement.querySelector('[data-ugc-lightbox-content]')
+            : null;
+        if (!content) {
+            return;
+        }
+
+        const src = this._escapeAttr(dataset.ugcMediaSrc || '');
+        const label = this._escapeAttr(dataset.ugcMediaLabel || '');
+
+        if (dataset.ugcMediaType === 'video') {
+            const poster = dataset.ugcMediaPoster ? ` poster="${this._escapeAttr(dataset.ugcMediaPoster)}"` : '';
+            content.innerHTML = `<video class="cs-ugc-lightbox-video" src="${src}"${poster} controls autoplay playsinline aria-label="${label}"></video>`;
+        } else {
+            content.innerHTML = `<img class="cs-ugc-lightbox-img" src="${src}" alt="${label}">`;
+        }
+
+        this.lightboxElement.hidden = false;
+    }
+
+    /**
+     * Hide the lightbox and clear its content — emptying the container is what
+     * stops a playing video, not just hiding it.
+     */
+    closeLightbox() {
+        if (!this.lightboxElement) {
+            return;
+        }
+
+        const content = this.lightboxElement.querySelector('[data-ugc-lightbox-content]');
+        if (content) {
+            content.innerHTML = '';
+        }
+
+        this.lightboxElement.hidden = true;
+    }
+
     renderError() {
         if (this.ratingElement) {
             this.ratingElement.innerHTML = '';
@@ -1338,6 +1570,9 @@ export default class UgcProduct {
             this.paginationElement.innerHTML = '';
             this.paginationElement.style.visibility = 'hidden';
         }
+
+        // No fetched reviews means no media to source — clear the grid too.
+        this.renderMediaGrid([]);
     }
 
     _buildStars(average) {
@@ -1368,6 +1603,7 @@ export default class UgcProduct {
         const staff = review.staff_response
             ? `<div class="cs-review-staff"><strong>CravenSpeed:</strong> ${this._escape(review.staff_response)}</div>`
             : '';
+        const media = this._buildReviewMedia(review);
 
         return `
             <article class="cs-review">
@@ -1380,6 +1616,7 @@ export default class UgcProduct {
                 </p>
                 ${vehicle ? `<p class="cs-review-vehicle">${vehicle}</p>` : ''}
                 <p class="cs-review-body">${body}</p>
+                ${media}
                 ${staff}
             </article>`;
     }
@@ -1411,6 +1648,17 @@ export default class UgcProduct {
         return div.innerHTML;
     }
 
+    /**
+     * Escape a value for a double-quoted HTML attribute context. _escape covers
+     * & < > via textContent, but NOT double quotes — a URL or label containing
+     * `"` would otherwise break out of the attribute (issue #30).
+     * @param {*} value
+     * @returns {string}
+     */
+    _escapeAttr(value) {
+        return this._escape(value).replace(/"/g, '&quot;');
+    }
+
     destroy() {
         if (this.unsubscribe) this.unsubscribe();
 
@@ -1428,6 +1676,18 @@ export default class UgcProduct {
 
         if (this.questionsPaginationElement) {
             this.questionsPaginationElement.removeEventListener('click', this.onQuestionsPaginationClick);
+        }
+
+        if (this.listElement) {
+            this.listElement.removeEventListener('click', this.onMediaTileClick);
+        }
+
+        if (this.mediaGridElement) {
+            this.mediaGridElement.removeEventListener('click', this.onMediaTileClick);
+        }
+
+        if (this.lightboxElement) {
+            this.lightboxElement.removeEventListener('click', this.onLightboxClick);
         }
 
         const reviewOpen = document.querySelector('[data-review-modal-open]');

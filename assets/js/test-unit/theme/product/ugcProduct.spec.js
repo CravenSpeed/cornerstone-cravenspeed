@@ -1846,3 +1846,315 @@ describe('UgcProduct (slice #9 — media upload flow)', () => {
         });
     });
 });
+
+describe('UgcProduct (#30 — review media display)', () => {
+    // §3.2.1 media item fixtures. Photo: thumb_url/medium_url set, poster_url
+    // null. Video: poster_url set, thumb_url/medium_url null.
+    const photoMedia = (overrides = {}) => ({
+        id: 9,
+        url: 'https://cdn.example/ugc/media/u1/full.jpg',
+        thumb_url: 'https://cdn.example/ugc/media/u1/thumb.jpg',
+        medium_url: 'https://cdn.example/ugc/media/u1/medium.jpg',
+        poster_url: null,
+        type: 'photo',
+        sort_order: 0,
+        ...overrides,
+    });
+
+    const videoMedia = (overrides = {}) => ({
+        id: 10,
+        url: 'https://cdn.example/ugc/media/u2/video.mp4',
+        thumb_url: null,
+        medium_url: null,
+        poster_url: 'https://cdn.example/ugc/media/u2/poster.jpg',
+        type: 'video',
+        sort_order: 1,
+        ...overrides,
+    });
+
+    const reviewWith = (media, overrides = {}) => ({
+        id: 1,
+        author: 'Jane D.',
+        rating: 5,
+        title: 'Great product',
+        body: 'Really happy with this.',
+        date: '2026-01-15T00:00:00Z',
+        media,
+        ...overrides,
+    });
+
+    const mountDisplayScaffold = () => {
+        document.body.innerHTML = `
+            <a id="product-rating" data-product-rating></a>
+            <div data-reviews-toolbar>
+                <select data-reviews-control="sort">
+                    <option value="date_desc">Newest</option>
+                    <option value="date_asc">Oldest</option>
+                </select>
+            </div>
+            <section data-ugc-media-grid></section>
+            <div id="product-reviews"></div>
+            <div data-reviews-pagination></div>
+            <div data-ugc-lightbox hidden>
+                <div data-ugc-lightbox-close></div>
+                <button type="button" data-ugc-lightbox-close>&times;</button>
+                <div data-ugc-lightbox-content></div>
+            </div>
+        `;
+    };
+
+    const grid = () => document.querySelector('[data-ugc-media-grid]');
+    const lightbox = () => document.querySelector('[data-ugc-lightbox]');
+    const lightboxContent = () => document.querySelector('[data-ugc-lightbox-content]');
+
+    beforeEach(() => {
+        mountDisplayScaffold();
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    describe('per-review thumbnail strip', () => {
+        it('renders a lazy-loaded photo thumbnail with descriptive alt text after the body', async () => {
+            const api = buildApi(okEnvelope({ items: [reviewWith([photoMedia()])], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const strip = document.querySelector('#product-reviews .cs-review-media');
+            expect(strip).not.toBeNull();
+
+            const img = strip.querySelector('.cs-media-tile img');
+            expect(img.getAttribute('src')).toEqual('https://cdn.example/ugc/media/u1/thumb.jpg');
+            expect(img.getAttribute('loading')).toEqual('lazy');
+            expect(img.getAttribute('alt')).toEqual("Photo from Jane D.'s review");
+        });
+
+        it('renders a video tile as its poster frame with a play affordance and aria label', async () => {
+            const api = buildApi(okEnvelope({ items: [reviewWith([videoMedia()])], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const tile = document.querySelector('#product-reviews .cs-media-tile--video');
+            expect(tile).not.toBeNull();
+            expect(tile.getAttribute('aria-label')).toEqual("Play video from Jane D.'s review");
+            expect(tile.querySelector('img').getAttribute('src')).toEqual('https://cdn.example/ugc/media/u2/poster.jpg');
+            expect(tile.querySelector('.cs-media-tile-play')).not.toBeNull();
+        });
+
+        it('renders no media strip when the review has an empty media array', async () => {
+            const api = buildApi(okEnvelope({ items: [reviewWith([])], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(document.querySelector('.cs-review-media')).toBeNull();
+        });
+
+        it('preserves the server-supplied sort_order array ordering (index 0 first)', async () => {
+            const items = [reviewWith([
+                photoMedia({ thumb_url: 'https://cdn.example/first.jpg', sort_order: 0 }),
+                videoMedia({ sort_order: 1 }),
+                photoMedia({ id: 11, thumb_url: 'https://cdn.example/third.jpg', sort_order: 2 }),
+            ])];
+            const api = buildApi(okEnvelope({ items, total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const srcs = Array.from(document.querySelectorAll('.cs-review-media img'))
+                .map(img => img.getAttribute('src'));
+            expect(srcs).toEqual([
+                'https://cdn.example/first.jpg',
+                'https://cdn.example/ugc/media/u2/poster.jpg',
+                'https://cdn.example/third.jpg',
+            ]);
+        });
+
+        it('falls down the thumb_url → poster_url → medium_url → url chain', async () => {
+            const items = [reviewWith([
+                photoMedia({ thumb_url: null }),
+                photoMedia({ id: 12, thumb_url: null, medium_url: null, url: 'https://cdn.example/only-full.jpg' }),
+            ])];
+            const api = buildApi(okEnvelope({ items, total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const srcs = Array.from(document.querySelectorAll('.cs-review-media img'))
+                .map(img => img.getAttribute('src'));
+            // First photo: thumb null, poster null (photo) → medium_url. Second:
+            // thumb/medium null → url.
+            expect(srcs).toEqual([
+                'https://cdn.example/ugc/media/u1/medium.jpg',
+                'https://cdn.example/only-full.jpg',
+            ]);
+        });
+
+        it('drops media entries without a url and labels missing authors generically', async () => {
+            const items = [reviewWith(
+                [photoMedia({ url: null }), photoMedia({ id: 13 })],
+                { author: '' },
+            )];
+            const api = buildApi(okEnvelope({ items, total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const imgs = document.querySelectorAll('.cs-review-media img');
+            expect(imgs).toHaveLength(1);
+            expect(imgs[0].getAttribute('alt')).toEqual('Photo from a customer review');
+        });
+    });
+
+    describe('top-level photo thumbnail grid', () => {
+        it('sources tiles from the media of the fetched reviews, in review order', async () => {
+            const items = [
+                reviewWith([photoMedia()], { id: 1 }),
+                reviewWith([videoMedia()], { id: 2, author: 'Bob' }),
+            ];
+            const api = buildApi(okEnvelope({ items, total: 2 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const tiles = grid().querySelectorAll('[data-ugc-media-tile]');
+            expect(tiles).toHaveLength(2);
+            expect(tiles[0].dataset.ugcMediaType).toEqual('photo');
+            expect(tiles[1].dataset.ugcMediaType).toEqual('video');
+            expect(grid().style.visibility).toEqual('visible');
+        });
+
+        it('stays hidden (space reserved) when no fetched review has media', async () => {
+            const api = buildApi(okEnvelope({ items: [reviewWith([])], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(grid().innerHTML).toEqual('');
+            expect(grid().style.visibility).toEqual('hidden');
+        });
+
+        it('hides the grid when the reviews fetch fails', async () => {
+            const api = buildApi({ ok: false, status: 0, message: 'down' });
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(grid().innerHTML).toEqual('');
+            expect(grid().style.visibility).toEqual('hidden');
+        });
+
+        it('caps the grid with a "+N" tile and expands in place on click', async () => {
+            const media = [];
+            for (let i = 0; i < 10; i += 1) {
+                media.push(photoMedia({ id: i, sort_order: i, thumb_url: `https://cdn.example/t${i}.jpg` }));
+            }
+            const api = buildApi(okEnvelope({ items: [reviewWith(media)], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(8);
+            const expand = grid().querySelector('[data-ugc-media-expand]');
+            expect(expand.textContent).toEqual('+2');
+
+            expand.click();
+
+            expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(10);
+            expect(grid().querySelector('[data-ugc-media-expand]')).toBeNull();
+        });
+
+        it('rebuilds (collapsed) from the new envelope on every refetch render pass', async () => {
+            const firstMedia = [];
+            for (let i = 0; i < 9; i += 1) {
+                firstMedia.push(photoMedia({ id: i, sort_order: i }));
+            }
+            const api = buildSequencedApi([
+                okEnvelope({ items: [reviewWith(firstMedia)], total: 1 }),
+                okEnvelope({ items: [reviewWith([videoMedia()])], total: 1 }),
+            ]);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            grid().querySelector('[data-ugc-media-expand]').click();
+            expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(9);
+
+            changeSelect('sort', 'date_asc');
+            await flush();
+
+            const tiles = grid().querySelectorAll('[data-ugc-media-tile]');
+            expect(tiles).toHaveLength(1);
+            expect(tiles[0].dataset.ugcMediaType).toEqual('video');
+            expect(grid().querySelector('[data-ugc-media-expand]')).toBeNull();
+        });
+    });
+
+    describe('lightbox', () => {
+        it('opens a clicked photo tile at medium size with alt text', async () => {
+            const api = buildApi(okEnvelope({ items: [reviewWith([photoMedia()])], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('.cs-review-media [data-ugc-media-tile]').click();
+
+            expect(lightbox().hidden).toBe(false);
+            const img = lightboxContent().querySelector('img');
+            expect(img.getAttribute('src')).toEqual('https://cdn.example/ugc/media/u1/medium.jpg');
+            expect(img.getAttribute('alt')).toEqual("Photo from Jane D.'s review");
+        });
+
+        it('opens a clicked video tile as a playable video with the poster frame', async () => {
+            const api = buildApi(okEnvelope({ items: [reviewWith([videoMedia()])], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            grid().querySelector('[data-ugc-media-tile]').click();
+
+            const video = lightboxContent().querySelector('video');
+            expect(video.getAttribute('src')).toEqual('https://cdn.example/ugc/media/u2/video.mp4');
+            expect(video.getAttribute('poster')).toEqual('https://cdn.example/ugc/media/u2/poster.jpg');
+            expect(video.hasAttribute('controls')).toBe(true);
+        });
+
+        it('closes and clears the content (stopping playback) on a close click', async () => {
+            const api = buildApi(okEnvelope({ items: [reviewWith([videoMedia()])], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            grid().querySelector('[data-ugc-media-tile]').click();
+            expect(lightbox().hidden).toBe(false);
+
+            lightbox().querySelector('button[data-ugc-lightbox-close]').click();
+
+            expect(lightbox().hidden).toBe(true);
+            expect(lightboxContent().innerHTML).toEqual('');
+        });
+    });
+
+    describe('escaping', () => {
+        it('escapes URLs so a quoted payload cannot break out of the attribute', async () => {
+            const hostile = 'https://cdn.example/x.jpg" onerror="alert(1)';
+            const items = [reviewWith([photoMedia({
+                thumb_url: hostile,
+                medium_url: hostile,
+            })])];
+            const api = buildApi(okEnvelope({ items, total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const img = document.querySelector('.cs-review-media img');
+            expect(img.getAttribute('src')).toEqual(hostile);
+            expect(img.hasAttribute('onerror')).toBe(false);
+
+            // The same holds after the round-trip through the tile dataset into
+            // the lightbox markup.
+            document.querySelector('.cs-review-media [data-ugc-media-tile]').click();
+            const large = lightboxContent().querySelector('img');
+            expect(large.getAttribute('src')).toEqual(hostile);
+            expect(large.hasAttribute('onerror')).toBe(false);
+        });
+
+        it('escapes author-derived labels to prevent HTML injection', async () => {
+            const items = [reviewWith([photoMedia()], { author: '<script>x</script>' })];
+            const api = buildApi(okEnvelope({ items, total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(grid().querySelector('script')).toBeNull();
+            expect(document.querySelector('.cs-review-media script')).toBeNull();
+        });
+    });
+});
