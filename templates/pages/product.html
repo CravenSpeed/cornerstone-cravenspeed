@@ -90,16 +90,25 @@
         </div>
 
 
-        {{!-- =====================================================================
-        // UGC review media (SRS §3.4.1 ordering: rating summary → photo
-        // thumbnail grid → review/question tabs). Populated async from fetched
-        // review media by ugcProduct.js; space is reserved via min-height +
-        // visibility:hidden in SCSS so the late paint never shifts layout.
-        // ===================================================================== --}}
-        <section class="cs-ugc-media-grid" aria-label="Customer photos and videos" data-ugc-media-grid></section>
+        {{!-- Browsable gallery of all customer media, opened from the
+        overview panel's "+N" tile. Pages in further media-bearing reviews on
+        demand via the Load more button. Toggled via the `hidden` attribute
+        from ugcProduct.js. --}}
+        <div class="cs-ugc-modal cs-ugc-gallery-modal" data-ugc-gallery hidden>
+            <div class="cs-ugc-modal-overlay" data-ugc-gallery-close></div>
+            <div class="cs-ugc-modal-dialog cs-ugc-gallery-dialog" role="dialog" aria-modal="true" aria-label="Customer photos and videos">
+                <button type="button" class="cs-ugc-modal-close" data-ugc-gallery-close aria-label="Close">&times;</button>
+                <h3 class="cs-ugc-gallery-title">Customer Photos &amp; Videos</h3>
+                <div class="cs-ugc-gallery-grid" data-ugc-gallery-grid></div>
+                <div class="cs-ugc-gallery-footer">
+                    <button type="button" class="button" data-ugc-gallery-more hidden>Load more</button>
+                </div>
+            </div>
+        </div>
 
-        {{!-- Shared media lightbox for the grid and per-review thumbnails.
-        Toggled via the `hidden` attribute from ugcProduct.js. --}}
+        {{!-- Shared media lightbox for the review media grid (in the Reviews
+        tab) and per-review thumbnails. Toggled via the `hidden` attribute
+        from ugcProduct.js. --}}
         <div class="cs-ugc-modal cs-ugc-lightbox" data-ugc-lightbox hidden>
             <div class="cs-ugc-modal-overlay" data-ugc-lightbox-close></div>
             <div class="cs-ugc-modal-dialog cs-ugc-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Review media">

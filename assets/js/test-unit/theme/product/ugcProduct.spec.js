@@ -49,6 +49,7 @@ const mountScaffold = () => {
             </select>
             <input type="checkbox" data-reviews-control="verified">
             <input type="checkbox" data-reviews-control="media">
+            <input type="checkbox" data-reviews-control="vehicle_first" disabled>
         </div>
         <div id="product-reviews"></div>
         <div class="cs-reviews-pagination" data-reviews-pagination></div>
@@ -529,6 +530,7 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
                     <option value="date_desc">Newest</option>
                     <option value="date_asc">Oldest</option>
                 </select>
+                <input type="checkbox" data-questions-control="vehicle_first" disabled>
             </div>
             <div id="product-questions"></div>
             <div class="cs-questions-pagination" data-questions-pagination></div>
@@ -750,24 +752,36 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
         });
     });
 
-    it('floats alias-matching questions on alias select and drops sort_alias on deselect', async () => {
+    it('floats alias-matching questions only when the vehicle-first toggle is on', async () => {
         const stateManager = buildStateManager();
         const api = buildQaApi(okQuestions());
         new UgcProduct(ARCHETYPE_ID, stateManager, api);
         await flush();
 
-        // Initial Q&A fetch carries no sort_alias.
+        // Initial Q&A fetch carries no sort_alias; the toggle is disabled.
         expect(qParamsOfCall(api, 1).sort_alias).toBeNull();
+        const toggle = document.querySelector('[data-questions-control="vehicle_first"]');
+        expect(toggle.disabled).toBe(true);
 
+        // Selecting an alias enables the toggle but does NOT refetch — the
+        // float is opt-in.
         stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        await flush();
+        expect(api.getQuestions).toHaveBeenCalledTimes(1);
+        expect(toggle.disabled).toBe(false);
+
+        toggle.checked = true;
+        toggle.dispatchEvent(new Event('change', { bubbles: true }));
         await flush();
         expect(api.getQuestions).toHaveBeenCalledTimes(2);
         expect(qParamsOfCall(api, 2).sort_alias).toBe(4821);
 
+        // Deselecting the alias drops the param and disables the toggle.
         stateManager._emit({ aliasData: null });
         await flush();
         expect(api.getQuestions).toHaveBeenCalledTimes(3);
         expect(qParamsOfCall(api, 3).sort_alias).toBeNull();
+        expect(toggle.disabled).toBe(true);
     });
 
     it('does not fetch questions when the Q&A DOM is absent', async () => {
@@ -818,13 +832,18 @@ describe('UgcProduct (slice 6d — alias-aware sort)', () => {
         expect(paramsOfCall(api, 1).sort_alias).toBeNull();
     });
 
-    it('refetches reviews with sort_alias when an alias is selected', async () => {
+    it('refetches reviews with sort_alias when the toggle is on and an alias is selected', async () => {
         const stateManager = buildStateManager();
         const api = buildReviewsApi();
         new UgcProduct(ARCHETYPE_ID, stateManager, api);
         await flush();
 
+        // Alias selection alone never refetches — floating is opt-in.
         stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        await flush();
+        expect(api.getReviews).toHaveBeenCalledTimes(1);
+
+        toggleCheckbox('vehicle_first', true);
         await flush();
 
         expect(api.getReviews).toHaveBeenCalledTimes(2);
@@ -839,6 +858,10 @@ describe('UgcProduct (slice 6d — alias-aware sort)', () => {
 
         stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
         await flush();
+        toggleCheckbox('vehicle_first', true);
+        await flush();
+        expect(paramsOfCall(api, 2).sort_alias).toBe(4821);
+
         stateManager._emit({ aliasData: null });
         await flush();
 
@@ -863,6 +886,8 @@ describe('UgcProduct (slice 6d — alias-aware sort)', () => {
 
         stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
         await flush();
+        toggleCheckbox('vehicle_first', true);
+        await flush();
 
         const last = paramsOfCall(api, api.getReviews.mock.calls.length);
         expect(last).toEqual({
@@ -883,14 +908,20 @@ describe('UgcProduct (slice 6d — alias-aware sort)', () => {
         new UgcProduct(ARCHETYPE_ID, stateManager, api);
         await flush();
 
+        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        toggleCheckbox('vehicle_first', true);
+        await flush();
+        expect(paramsOfCall(api, 2).sort_alias).toBe(4821);
+
         document.querySelector('[data-reviews-page="3"]').click();
         await flush();
-        expect(paramsOfCall(api, 2).page).toBe(3);
+        expect(paramsOfCall(api, 3).page).toBe(3);
 
-        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        // Switching to a different alias re-floats and resets the page.
+        stateManager._emit({ aliasData: { qty_alias_index: 7777 } });
         await flush();
-        expect(paramsOfCall(api, 3).page).toBe(1);
-        expect(paramsOfCall(api, 3).sort_alias).toBe(4821);
+        expect(paramsOfCall(api, 4).page).toBe(1);
+        expect(paramsOfCall(api, 4).sort_alias).toBe(7777);
     });
 
     it('does not refetch when an unrelated state notification leaves the alias unchanged', async () => {
@@ -900,6 +931,7 @@ describe('UgcProduct (slice 6d — alias-aware sort)', () => {
         await flush();
 
         stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        toggleCheckbox('vehicle_first', true);
         await flush();
         expect(api.getReviews).toHaveBeenCalledTimes(2);
 
@@ -1102,6 +1134,9 @@ describe('UgcProduct (slice 6e — submission modal)', () => {
             expect(payload).not.toHaveProperty('alias_id');
         });
 
+        // The vehicle-first float toggle is OFF throughout this test — the
+        // selected alias must still ride on the submission as alias_id (the
+        // float preference and the selection are independent).
         it('includes alias_id from the selected alias index', async () => {
             const stateManager = buildStateManager();
             const api = buildSubmitApi();
@@ -1900,10 +1935,17 @@ describe('UgcProduct (#30 — review media display)', () => {
                 <button type="button" data-ugc-lightbox-close>&times;</button>
                 <div data-ugc-lightbox-content></div>
             </div>
+            <div data-ugc-gallery hidden>
+                <div data-ugc-gallery-close></div>
+                <button type="button" data-ugc-gallery-close>&times;</button>
+                <div data-ugc-gallery-grid></div>
+                <button type="button" data-ugc-gallery-more hidden>Load more</button>
+            </div>
         `;
     };
 
     const grid = () => document.querySelector('[data-ugc-media-grid]');
+    const galleryModal = () => document.querySelector('[data-ugc-gallery]');
     const lightbox = () => document.querySelector('[data-ugc-lightbox]');
     const lightboxContent = () => document.querySelector('[data-ugc-lightbox-content]');
 
@@ -2020,8 +2062,71 @@ describe('UgcProduct (#30 — review media display)', () => {
             expect(grid().style.visibility).toEqual('visible');
         });
 
-        it('stays hidden (space reserved) when no fetched review has media', async () => {
+        it('shows the rating summary alone when no fetched review has media', async () => {
             const api = buildApi(okEnvelope({ items: [reviewWith([])], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const summary = grid().querySelector('.cs-ugc-media-grid-summary');
+            expect(summary).not.toBeNull();
+            expect(summary.querySelector('.cs-ugc-summary-average').textContent).toEqual('4.7');
+            expect(summary.querySelector('.cs-ugc-summary-count').textContent).toEqual('36 reviews');
+            expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(0);
+            expect(grid().querySelector('.cs-ugc-media-grid-title')).toBeNull();
+            expect(grid().style.visibility).toEqual('visible');
+        });
+
+        it('renders the per-score histogram from archetype_rating_breakdown (§3.2.1)', async () => {
+            const api = buildApi(okEnvelope({
+                items: [reviewWith([])],
+                total: 1,
+                archetype_review_count: 36,
+                archetype_rating_breakdown: {
+                    1: 0, 2: 1, 3: 2, 4: 5, 5: 28,
+                },
+            }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const rows = grid().querySelectorAll('.cs-ugc-breakdown-row');
+            expect(rows).toHaveLength(5);
+            // Rendered 5★ down to 1★, bars proportional to count / total.
+            expect(rows[0].getAttribute('aria-label')).toEqual('28 reviews at 5 stars');
+            expect(rows[0].querySelector('.cs-ugc-breakdown-fill').style.width).toEqual('78%');
+            expect(rows[0].querySelector('.cs-ugc-breakdown-count').textContent).toEqual('28');
+            expect(rows[3].getAttribute('aria-label')).toEqual('1 review at 2 stars');
+            expect(rows[4].getAttribute('aria-label')).toEqual('0 reviews at 1 star');
+            expect(rows[4].querySelector('.cs-ugc-breakdown-fill').style.width).toEqual('0%');
+        });
+
+        it('renders no histogram while the envelope lacks archetype_rating_breakdown', async () => {
+            const api = buildApi(okEnvelope({ items: [reviewWith([])], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(grid().querySelector('.cs-ugc-media-grid-summary')).not.toBeNull();
+            expect(grid().querySelector('.cs-ugc-summary-breakdown')).toBeNull();
+        });
+
+        it('renders the rating summary above the gallery when media exists', async () => {
+            const api = buildApi(okEnvelope({ items: [reviewWith([photoMedia()])], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const children = grid().children;
+            expect(children[0].className).toEqual('cs-ugc-media-grid-summary');
+            expect(children[1].className).toEqual('cs-ugc-media-gallery');
+            expect(children[1].querySelector('.cs-ugc-media-grid-title')).not.toBeNull();
+            expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(1);
+        });
+
+        it('stays hidden (space reserved) when the archetype has no reviews at all', async () => {
+            const api = buildApi(okEnvelope({
+                items: [],
+                total: 0,
+                archetype_rating_average: null,
+                archetype_review_count: 0,
+            }));
             new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
             await flush();
 
@@ -2038,7 +2143,7 @@ describe('UgcProduct (#30 — review media display)', () => {
             expect(grid().style.visibility).toEqual('hidden');
         });
 
-        it('caps the grid with a "+N" tile and expands in place on click', async () => {
+        it('caps the band with a "+N" tile that opens the gallery modal', async () => {
             const media = [];
             for (let i = 0; i < 10; i += 1) {
                 media.push(photoMedia({ id: i, sort_order: i, thumb_url: `https://cdn.example/t${i}.jpg` }));
@@ -2053,32 +2158,236 @@ describe('UgcProduct (#30 — review media display)', () => {
 
             expand.click();
 
-            expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(10);
-            expect(grid().querySelector('[data-ugc-media-expand]')).toBeNull();
+            // The band does not grow — the gallery modal opens with the full
+            // batch, and Load more stays hidden (batch exhausted).
+            expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(8);
+            expect(galleryModal().hidden).toBe(false);
+            expect(galleryModal().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(10);
+            expect(galleryModal().querySelector('[data-ugc-gallery-more]').hidden).toBe(true);
+
+            galleryModal().querySelector('[data-ugc-gallery-close]').click();
+            expect(galleryModal().hidden).toBe(true);
         });
 
-        it('rebuilds (collapsed) from the new envelope on every refetch render pass', async () => {
-            const firstMedia = [];
-            for (let i = 0; i < 9; i += 1) {
-                firstMedia.push(photoMedia({ id: i, sort_order: i }));
-            }
+        it('pages further media into the gallery modal via Load more', async () => {
+            const pageOf = (start) => {
+                const items = [];
+                for (let i = 0; i < 10; i += 1) {
+                    items.push(reviewWith([photoMedia({ id: start + i, sort_order: 0 })], { id: start + i }));
+                }
+                return items;
+            };
             const api = buildSequencedApi([
-                okEnvelope({ items: [reviewWith(firstMedia)], total: 1 }),
-                okEnvelope({ items: [reviewWith([videoMedia()])], total: 1 }),
+                okEnvelope({ items: [reviewWith([])], total: 1 }),
+                okEnvelope({ items: pageOf(0), total: 20, per_page: 10 }),
+                okEnvelope({ items: pageOf(100), total: 20, per_page: 10 }),
             ]);
             new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
             await flush();
 
             grid().querySelector('[data-ugc-media-expand]').click();
-            expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(9);
+            const more = galleryModal().querySelector('[data-ugc-gallery-more]');
+            expect(galleryModal().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(10);
+            expect(more.hidden).toBe(false);
+
+            more.click();
+            await flush();
+
+            expect(api.getReviews).toHaveBeenCalledTimes(3);
+            expect(api.getReviews.mock.calls[2][1]).toEqual({ media: true, sort: 'date_desc', page: 2 });
+            expect(galleryModal().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(20);
+            expect(more.hidden).toBe(true);
+        });
+
+        it('shows the full owning review under the media for band tiles', async () => {
+            const review = reviewWith([photoMedia({ medium_url: 'https://cdn.example/m.jpg' })], {
+                author: 'Dave',
+                title: 'Great mount',
+                body: 'Fits my F56 perfectly.',
+                rating: 5,
+            });
+            const api = buildApi(okEnvelope({ items: [review], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            grid().querySelector('[data-ugc-media-tile]').click();
+
+            const content = document.querySelector('[data-ugc-lightbox-content]');
+            expect(content.querySelector('img').src).toEqual('https://cdn.example/m.jpg');
+            const shown = content.querySelector('.cs-ugc-lightbox-review .cs-review');
+            expect(shown).not.toBeNull();
+            expect(shown.querySelector('.cs-review-title').textContent).toEqual('Great mount');
+            expect(shown.querySelector('.cs-review-body').textContent).toEqual('Fits my F56 perfectly.');
+            // The review's own media strip is not duplicated inside the lightbox.
+            expect(shown.querySelector('.cs-review-media')).toBeNull();
+        });
+
+        it('keeps per-review strip tiles media-only in the lightbox', async () => {
+            const review = reviewWith([photoMedia()], { title: 'Great mount' });
+            const api = buildApi(okEnvelope({ items: [review], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('#product-reviews [data-ugc-media-tile]').click();
+
+            const content = document.querySelector('[data-ugc-lightbox-content]');
+            expect(content.querySelector('img')).not.toBeNull();
+            expect(content.querySelector('.cs-ugc-lightbox-review')).toBeNull();
+        });
+
+        it('opens the lightbox above the gallery modal from one of its tiles', async () => {
+            const media = [];
+            for (let i = 0; i < 10; i += 1) {
+                media.push(photoMedia({ id: i, sort_order: i, medium_url: `https://cdn.example/m${i}.jpg` }));
+            }
+            const api = buildApi(okEnvelope({ items: [reviewWith(media)], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            grid().querySelector('[data-ugc-media-expand]').click();
+            galleryModal().querySelectorAll('[data-ugc-media-tile]')[3].click();
+
+            const lightboxEl = document.querySelector('[data-ugc-lightbox]');
+            expect(lightboxEl.hidden).toBe(false);
+            expect(lightboxEl.querySelector('img').src).toEqual('https://cdn.example/m3.jpg');
+            // The gallery modal stays open underneath.
+            expect(galleryModal().hidden).toBe(false);
+        });
+
+        it('tops up the gallery batch when a wider band wants more tiles', async () => {
+            const observers = [];
+            global.ResizeObserver = class {
+                constructor(callback) {
+                    this.callback = callback;
+                    observers.push(this);
+                }
+
+                observe() {}
+
+                disconnect() {}
+            };
+            let columns = 6;
+            const realGetComputedStyle = window.getComputedStyle.bind(window);
+            const styleSpy = jest.spyOn(window, 'getComputedStyle').mockImplementation((el) => {
+                if (el.hasAttribute && el.hasAttribute('data-ugc-media-gallery')) {
+                    return { gridTemplateColumns: Array(columns).fill('100px').join(' ') };
+                }
+                return realGetComputedStyle(el);
+            });
+
+            try {
+                const pageOf = (start) => {
+                    const items = [];
+                    for (let i = 0; i < 10; i += 1) {
+                        items.push(reviewWith([photoMedia({ id: start + i, sort_order: 0 })], { id: start + i }));
+                    }
+                    return items;
+                };
+                const api = buildSequencedApi([
+                    okEnvelope({ items: [reviewWith([])], total: 1 }),
+                    okEnvelope({ items: pageOf(0), total: 20, per_page: 10 }),
+                    okEnvelope({ items: pageOf(100), total: 20, per_page: 10 }),
+                ]);
+                new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+                await flush();
+
+                // 6 columns → capacity 9: page 1's ten items suffice, page 2
+                // is not fetched.
+                observers[0].callback();
+                await flush();
+                expect(api.getReviews).toHaveBeenCalledTimes(2);
+                expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(8);
+
+                // 12 columns → capacity 21: the batch tops up with page 2.
+                columns = 12;
+                observers[0].callback();
+                await flush();
+                expect(api.getReviews).toHaveBeenCalledTimes(3);
+                expect(api.getReviews.mock.calls[2][1]).toEqual({ media: true, sort: 'date_desc', page: 2 });
+                expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(20);
+                expect(grid().querySelector('[data-ugc-media-expand]')).toBeNull();
+            } finally {
+                styleSpy.mockRestore();
+                delete global.ResizeObserver;
+            }
+        });
+
+        it('fills the measured two-row band exactly and re-caps on resize', async () => {
+            const observers = [];
+            global.ResizeObserver = class {
+                constructor(callback) {
+                    this.callback = callback;
+                    observers.push(this);
+                }
+
+                observe() {}
+
+                disconnect() {}
+            };
+            let columns = 6;
+            const realGetComputedStyle = window.getComputedStyle.bind(window);
+            const styleSpy = jest.spyOn(window, 'getComputedStyle').mockImplementation((el) => {
+                if (el.hasAttribute && el.hasAttribute('data-ugc-media-gallery')) {
+                    return { gridTemplateColumns: Array(columns).fill('100px').join(' ') };
+                }
+                return realGetComputedStyle(el);
+            });
+
+            try {
+                const media = [];
+                for (let i = 0; i < 12; i += 1) {
+                    media.push(photoMedia({ id: i, sort_order: i }));
+                }
+                const api = buildApi(okEnvelope({ items: [reviewWith(media)], total: 1 }));
+                new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+                await flush();
+
+                // Layout lands: 6 columns → (6 * 2) - 3 = 9 elements fill the
+                // band, so 8 tiles + the "+4" tile.
+                observers[0].callback();
+                expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(8);
+                expect(grid().querySelector('[data-ugc-media-expand]').textContent).toEqual('+4');
+
+                // Wider viewport: 8 columns → 13 elements — all 12 tiles fit.
+                columns = 8;
+                observers[0].callback();
+                expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(12);
+                expect(grid().querySelector('[data-ugc-media-expand]')).toBeNull();
+            } finally {
+                styleSpy.mockRestore();
+                delete global.ResizeObserver;
+            }
+        });
+
+        it('sources the gallery from its own media=true batch, stable across list refetches', async () => {
+            const galleryMedia = [];
+            for (let i = 0; i < 10; i += 1) {
+                galleryMedia.push(photoMedia({ id: i, sort_order: i }));
+            }
+            const api = buildSequencedApi([
+                okEnvelope({ items: [reviewWith([videoMedia()])], total: 1 }),
+                okEnvelope({ items: [reviewWith(galleryMedia)], total: 1 }),
+                okEnvelope({ items: [reviewWith([])], total: 1 }),
+            ]);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            // The second call is the gallery's own §3.2.1 query.
+            expect(api.getReviews.mock.calls[1][1]).toEqual({ media: true, sort: 'date_desc', page: 1 });
+
+            // The grid is built from the gallery batch (10 photos), not the
+            // visible list page (1 video).
+            expect(grid().querySelectorAll('[data-ugc-media-tile]')).toHaveLength(8);
 
             changeSelect('sort', 'date_asc');
             await flush();
 
+            // The list refetched; the gallery batch did not.
+            expect(api.getReviews).toHaveBeenCalledTimes(3);
             const tiles = grid().querySelectorAll('[data-ugc-media-tile]');
-            expect(tiles).toHaveLength(1);
-            expect(tiles[0].dataset.ugcMediaType).toEqual('video');
-            expect(grid().querySelector('[data-ugc-media-expand]')).toBeNull();
+            expect(tiles).toHaveLength(8);
+            expect(tiles[0].dataset.ugcMediaType).toEqual('photo');
+            expect(grid().querySelector('[data-ugc-media-expand]')).not.toBeNull();
         });
     });
 

@@ -2,10 +2,16 @@
     <div class="cs-questions-toolbar" data-questions-toolbar>
         <label class="cs-questions-control cs-questions-control--sort">
             <span class="cs-questions-control-label">{{lang 'products.questions.sort_label'}}</span>
-            <select class="cs-questions-select" data-questions-control="sort">
+            <select class="cs-questions-select cs-form-select" data-questions-control="sort">
                 <option value="date_desc">{{lang 'products.questions.sort_newest'}}</option>
                 <option value="date_asc">{{lang 'products.questions.sort_oldest'}}</option>
             </select>
+        </label>
+        {{!-- Opt-in alias-aware sort: disabled until a vehicle is selected;
+        ugcProduct.js enables it and mirrors it with the reviews toolbar's copy. --}}
+        <label class="cs-questions-control cs-questions-control--toggle">
+            <input type="checkbox" data-questions-control="vehicle_first" disabled>
+            <span class="cs-questions-control-label">{{lang 'products.questions.filter_vehicle_first'}}</span>
         </label>
         <button type="button" class="button button--primary cs-ugc-submit-open" data-question-modal-open>
             {{lang 'products.questions.submit.open'}}
