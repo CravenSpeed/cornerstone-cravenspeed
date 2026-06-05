@@ -1,6 +1,7 @@
 import UgcOverview, {
     FILTERS,
     applyFilter,
+    buildStarIcons,
     paginate,
     pageCount,
 } from '../../../theme/_addons/global/ugcOverview';
@@ -96,6 +97,23 @@ describe('ugcOverview pure helpers', () => {
             const reviews = [{ rating: 5 }, { rating: 5, media: null }];
             expect(applyFilter(reviews, FILTERS.WITH_PHOTOS)).toHaveLength(0);
             expect(applyFilter(reviews, FILTERS.BASIC)).toHaveLength(2);
+        });
+    });
+
+    describe('buildStarIcons', () => {
+        const countOf = (html, needle) => html.split(needle).length - 1;
+
+        it('renders five sprite stars split by rating', () => {
+            const html = buildStarIcons(3);
+            expect(countOf(html, '#icon-star')).toBe(5);
+            expect(countOf(html, 'icon--ratingFull')).toBe(3);
+            expect(countOf(html, 'icon--ratingEmpty')).toBe(2);
+        });
+
+        it('renders all empty stars for a zero rating', () => {
+            const html = buildStarIcons(0);
+            expect(countOf(html, 'icon--ratingFull')).toBe(0);
+            expect(countOf(html, 'icon--ratingEmpty')).toBe(5);
         });
     });
 });
@@ -197,6 +215,19 @@ describe('UgcOverview controller', () => {
 
         await expect(overview.init()).resolves.toBeUndefined();
         expect(api.getOverview).not.toHaveBeenCalled();
+    });
+
+    it('renders sprite stars on cards matching the product-page markup', async () => {
+        api.getOverview.mockResolvedValue(okResult(makeReviews(1, { ratingCycle: [4] })));
+        const overview = mount();
+        await overview.init();
+
+        const stars = document.querySelector('.cs-ugc-overview-stars');
+        expect(stars.getAttribute('role')).toBe('img');
+        expect(stars.getAttribute('aria-label')).toBe('4 out of 5 stars');
+        expect(stars.querySelectorAll('use[href="#icon-star"]')).toHaveLength(5);
+        expect(stars.querySelectorAll('.icon--ratingFull')).toHaveLength(4);
+        expect(stars.querySelectorAll('.icon--ratingEmpty')).toHaveLength(1);
     });
 
     it('uses the first media thumb_url for the card image', async () => {

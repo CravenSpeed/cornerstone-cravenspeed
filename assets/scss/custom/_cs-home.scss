@@ -157,12 +157,19 @@
 }
 
 .cs-ugc-overview-filter {
+  min-height: 44px;
   padding: spacing('quarter') spacing('half');
-  border: 1px solid stencilColor('color-grayLight');
+  border: 1px solid stencilColor('color-greyLight');
   border-radius: stencilRadius('base');
   background-color: stencilColor('color-white');
   color: stencilColor('color-textBase');
   cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    border-color: stencilColor('color-primary');
+    color: stencilColor('color-primary');
+  }
 
   &.is-active {
     background-color: stencilColor('color-primary');
@@ -184,16 +191,30 @@
 .cs-ugc-overview-card {
   display: flex;
   flex-direction: column;
-  border: 1px solid stencilColor('color-grayLight');
+  border: 1px solid stencilColor('color-greyLight');
   border-radius: stencilRadius('card');
   overflow: hidden;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+
+    &:hover {
+      transform: none;
+    }
+  }
 }
 
 .cs-ugc-overview-thumb {
   position: relative;
   width: 100%;
   padding-top: 100%;
-  background-color: stencilColor('color-grayLightest');
+  background-color: stencilColor('color-greyLightest');
 
   img {
     position: absolute;
@@ -217,8 +238,22 @@
   padding: spacing('half');
 }
 
+// Stars come from the shared icon sprite (icon--ratingFull/Empty fills in
+// components/stencil/rating). The theme has no global .icon sizing, so size
+// the sprite stars here to match the product-page presentation.
 .cs-ugc-overview-stars {
-  color: stencilColor('color-primary');
+  display: inline-flex;
+  align-items: center;
+
+  .icon {
+    width: 1rem;
+    height: 1rem;
+
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+  }
 }
 
 .cs-ugc-overview-title {
@@ -239,6 +274,16 @@
   color: stencilColor('color-textSecondary');
 }
 
+.cs-ugc-overview-product {
+  color: stencilColor('color-textLink');
+  text-decoration: none;
+
+  &:hover,
+  &:focus-visible {
+    text-decoration: underline;
+  }
+}
+
 .cs-ugc-overview-empty {
   text-align: center;
   color: stencilColor('color-textSecondary');
@@ -250,4 +295,32 @@
   justify-content: center;
   gap: spacing('half');
   margin-top: spacing('single');
+}
+
+// Matches the .cs-reviews-page treatment on the product page: 44px touch
+// targets, bordered buttons, dimmed disabled state.
+.cs-ugc-overview-page {
+  min-width: 44px;
+  height: 44px;
+  padding: 0 spacing('half');
+  border: 1px solid stencilColor('color-greyLightest');
+  background: stencilColor('color-white');
+  color: stencilColor('color-textBase');
+  cursor: pointer;
+
+  &:hover:not(:disabled),
+  &:focus-visible {
+    border-color: stencilColor('color-primary');
+    color: stencilColor('color-primary');
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.cs-ugc-overview-page-status {
+  font-size: 0.875rem;
+  color: stencilColor('color-textSecondary');
 }

@@ -826,7 +826,12 @@ $cs-button-height: 50px;
   padding: 0 spacing('half');
   border: 1px solid stencilColor('color-greyLightest');
 
-  &:focus {
+  &:hover {
+    border-color: stencilColor('color-greyDark');
+  }
+
+  &:focus,
+  &:focus-visible {
     border-color: stencilColor('color-primary');
     outline: none;
   }
@@ -854,6 +859,12 @@ $cs-button-height: 50px;
   background: #fff;
   color: stencilColor('color-textBase');
   cursor: pointer;
+
+  &:hover:not(:disabled),
+  &:focus-visible {
+    border-color: stencilColor('color-primary');
+    color: stencilColor('color-primary');
+  }
 
   &.is-current {
     border-color: stencilColor('color-primary');
@@ -906,6 +917,11 @@ $cs-button-height: 50px;
 .cs-review-verified {
   color: stencilColor('color-primary');
   font-weight: 700;
+}
+
+.cs-review-date {
+  font-size: 0.875rem;
+  color: stencilColor('color-textSecondary');
 }
 
 .cs-review-vehicle {
@@ -967,7 +983,12 @@ $cs-button-height: 50px;
   padding: 0 spacing('half');
   border: 1px solid stencilColor('color-greyLightest');
 
-  &:focus {
+  &:hover {
+    border-color: stencilColor('color-greyDark');
+  }
+
+  &:focus,
+  &:focus-visible {
     border-color: stencilColor('color-primary');
     outline: none;
   }
@@ -993,6 +1014,12 @@ $cs-button-height: 50px;
   background: #fff;
   color: stencilColor('color-textBase');
   cursor: pointer;
+
+  &:hover:not(:disabled),
+  &:focus-visible {
+    border-color: stencilColor('color-primary');
+    color: stencilColor('color-primary');
+  }
 
   &.is-current {
     border-color: stencilColor('color-primary');
@@ -1023,6 +1050,11 @@ $cs-button-height: 50px;
 
 .cs-question-author {
   font-weight: 700;
+}
+
+.cs-question-date {
+  font-size: 0.875rem;
+  color: stencilColor('color-textSecondary');
 }
 
 .cs-question-vehicle {
@@ -1065,8 +1097,17 @@ $cs-button-height: 50px;
   padding: spacing('single');
   overflow-y: auto;
 
+  // Fade in each time ugcProduct.js removes the `hidden` attribute — the
+  // display: none -> flex flip restarts the animation, so the show/hide
+  // contract stays attribute-driven with no JS changes.
+  animation: fadeIn 0.2s ease;
+
   &[hidden] {
     display: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
   }
 }
 
@@ -1083,9 +1124,9 @@ $cs-button-height: 50px;
   max-width: 32rem;
   margin: spacing('single') 0;
   padding: spacing('double') spacing('single') spacing('single');
-  background: #fff;
+  background: stencilColor('color-white');
   border-radius: 4px;
-  color: #333;
+  color: stencilColor('color-textBase');
 
   @include breakpoint('medium') {
     padding: spacing('double');
@@ -1095,7 +1136,7 @@ $cs-button-height: 50px;
     margin: 0 0 spacing('single');
     padding-right: spacing('double');
     font-weight: 700;
-    color: #000;
+    color: stencilColor('color-textHeading');
   }
 }
 
@@ -1108,10 +1149,20 @@ $cs-button-height: 50px;
   padding: 0;
   font-size: 1.5rem;
   line-height: 1;
-  color: #333;
+  color: stencilColor('color-textBase');
   background: transparent;
   border: 0;
   cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    color: stencilColor('color-primary');
+  }
+
+  &:focus-visible {
+    outline: 2px solid stencilColor('color-primary');
+    outline-offset: 2px;
+  }
 }
 
 .cs-ugc-fields {
@@ -1192,7 +1243,7 @@ $cs-button-height: 50px;
 .cs-ugc-form-error {
   margin: 0 0 spacing('single');
   padding: spacing('half');
-  color: #fff;
+  color: stencilColor('color-white');
   background: stencilColor('color-error');
 
   &[hidden] {

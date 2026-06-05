@@ -12,6 +12,7 @@ import ugcApi from './ugcApi';
 import { escapeHtml } from './search/utils';
 
 const PER_PAGE = 10;
+const MAX_STARS = 5;
 
 // Client-side display filters (SRS §3.4.2). `rating` carries a 1-5 value when
 // the user picks a star count; the others ignore it.
@@ -54,6 +55,26 @@ export function applyFilter(reviews, filter, ratingValue = null) {
     }
 
     return reviews;
+}
+
+/**
+ * Build the 5-star strip from the shared icon sprite — the same
+ * icon--ratingFull / icon--ratingEmpty + #icon-star markup the product page
+ * renders (ugcProduct.js), so stars look identical on both surfaces. The
+ * sprite is injected unconditionally in layout/base.html, so #icon-star is
+ * available on the home page.
+ * @param {number} rating - Whole stars, 0-5.
+ * @returns {string}
+ */
+export function buildStarIcons(rating) {
+    let stars = '';
+
+    for (let i = 1; i <= MAX_STARS; i += 1) {
+        const modifier = i <= rating ? 'ratingFull' : 'ratingEmpty';
+        stars += `<span class="icon icon--${modifier}"><svg><use href="#icon-star" /></svg></span>`;
+    }
+
+    return stars;
 }
 
 /**
@@ -199,13 +220,13 @@ export default class UgcOverview {
         const archetypeName = escapeHtml(review.archetype_name);
         const archetypeUrl = escapeHtml(review.archetype_url);
         const rating = parseInt(review.rating, 10) || 0;
-        const stars = '★'.repeat(rating) + '☆'.repeat(Math.max(0, 5 - rating));
+        const stars = buildStarIcons(rating);
 
         return `
             <article class="cs-ugc-overview-card">
                 ${this.buildThumb(review)}
                 <div class="cs-ugc-overview-card-body">
-                    <div class="cs-ugc-overview-stars" aria-label="${rating} out of 5 stars">${stars}</div>
+                    <div class="cs-ugc-overview-stars" role="img" aria-label="${rating} out of ${MAX_STARS} stars">${stars}</div>
                     ${title ? `<h3 class="cs-ugc-overview-title">${title}</h3>` : ''}
                     <p class="cs-ugc-overview-text">${body}</p>
                     <p class="cs-ugc-overview-meta">
