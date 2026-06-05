@@ -91,6 +91,24 @@
 
 
         {{!-- =====================================================================
+        // UGC review media (SRS §3.4.1 ordering: rating summary → photo
+        // thumbnail grid → review/question tabs). Populated async from fetched
+        // review media by ugcProduct.js; space is reserved via min-height +
+        // visibility:hidden in SCSS so the late paint never shifts layout.
+        // ===================================================================== --}}
+        <section class="cs-ugc-media-grid" aria-label="Customer photos and videos" data-ugc-media-grid></section>
+
+        {{!-- Shared media lightbox for the grid and per-review thumbnails.
+        Toggled via the `hidden` attribute from ugcProduct.js. --}}
+        <div class="cs-ugc-modal cs-ugc-lightbox" data-ugc-lightbox hidden>
+            <div class="cs-ugc-modal-overlay" data-ugc-lightbox-close></div>
+            <div class="cs-ugc-modal-dialog cs-ugc-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Review media">
+                <button type="button" class="cs-ugc-modal-close" data-ugc-lightbox-close aria-label="Close">&times;</button>
+                <div class="cs-ugc-lightbox-content" data-ugc-lightbox-content></div>
+            </div>
+        </div>
+
+        {{!-- =====================================================================
         // "BELOW THE FOLD" CONTENT
         // Cornerstone tabs for Description, Reviews, etc.
         // ===================================================================== --}}
