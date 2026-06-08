@@ -1,8 +1,14 @@
 <div class="cs-reviews" data-reviews>
+    {{!-- UGC reviews-overview panel: archetype rating summary + customer
+    media grid (SRS §3.4.1). Populated async by ugcProduct.js; space is
+    reserved via min-height + visibility:hidden in SCSS so the late paint
+    never shifts layout. --}}
+    <section class="cs-ugc-media-grid" aria-label="Reviews overview" data-ugc-media-grid></section>
+
     <div class="cs-reviews-toolbar" data-reviews-toolbar>
         <label class="cs-reviews-control cs-reviews-control--sort">
             <span class="cs-reviews-control-label">{{lang 'products.reviews.sort_label'}}</span>
-            <select class="cs-reviews-select" data-reviews-control="sort">
+            <select class="cs-reviews-select cs-form-select" data-reviews-control="sort">
                 <option value="date_desc">{{lang 'products.reviews.sort_newest'}}</option>
                 <option value="date_asc">{{lang 'products.reviews.sort_oldest'}}</option>
                 <option value="rating_desc">{{lang 'products.reviews.sort_rating_high'}}</option>
@@ -11,7 +17,7 @@
         </label>
         <label class="cs-reviews-control cs-reviews-control--rating">
             <span class="cs-reviews-control-label">{{lang 'products.reviews.filter_rating'}}</span>
-            <select class="cs-reviews-select" data-reviews-control="rating">
+            <select class="cs-reviews-select cs-form-select" data-reviews-control="rating">
                 <option value="">{{lang 'products.reviews.filter_rating_all'}}</option>
                 <option value="5">5</option>
                 <option value="4">4</option>
@@ -27,6 +33,12 @@
         <label class="cs-reviews-control cs-reviews-control--toggle">
             <input type="checkbox" data-reviews-control="media">
             <span class="cs-reviews-control-label">{{lang 'products.reviews.filter_media'}}</span>
+        </label>
+        {{!-- Opt-in alias-aware sort: disabled until a vehicle is selected;
+        ugcProduct.js enables it and mirrors it with the Q&A toolbar's copy. --}}
+        <label class="cs-reviews-control cs-reviews-control--toggle">
+            <input type="checkbox" data-reviews-control="vehicle_first" disabled>
+            <span class="cs-reviews-control-label">{{lang 'products.reviews.filter_vehicle_first'}}</span>
         </label>
         <button type="button" class="button button--primary cs-ugc-submit-open" data-review-modal-open>
             {{lang 'products.reviews.submit.open'}}

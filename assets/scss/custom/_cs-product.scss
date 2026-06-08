@@ -550,6 +550,12 @@ $cs-button-height: 50px;
       margin: 0 auto;
     }
 
+    .cs-reviews,
+    .cs-questions {
+      max-width: $cs-product-max-width;
+      margin: 0 auto;
+    }
+
 
 
     .cs-product-form {
@@ -808,10 +814,14 @@ $cs-button-height: 50px;
   gap: spacing('quarter');
   font-size: 0.875rem;
 
+  // 44px min-height centers the checkbox against the selects' control row
+  // (the toolbar bottom-aligns items, so a text-height toggle would sink to
+  // the selects' baseline).
   &--toggle {
     flex-direction: row;
     align-items: center;
     gap: spacing('half');
+    min-height: 44px;
   }
 }
 
@@ -820,22 +830,8 @@ $cs-button-height: 50px;
   font-weight: 600;
 }
 
-.cs-reviews-select {
-  height: 44px;
-  font-size: 1rem;
-  padding: 0 spacing('half');
-  border: 1px solid stencilColor('color-greyLightest');
-
-  &:hover {
-    border-color: stencilColor('color-greyDark');
-  }
-
-  &:focus,
-  &:focus-visible {
-    border-color: stencilColor('color-primary');
-    outline: none;
-  }
-}
+// Visuals come from the shared .cs-form-select class (the add-to-cart option
+// dropdowns) on the same element — identical by construction.
 
 // Pagination (SRS §3.2.1 envelope counts). Reserve space rather than hiding so
 // the list does not jump when a single page collapses the control.
@@ -892,11 +888,45 @@ $cs-button-height: 50px;
 
 .cs-review {
   padding: spacing('single') 0;
-  border-bottom: 1px solid stencilColor('color-greyLightest');
+  border-bottom: 1px solid stencilColor('color-greyLighter');
 
   .cs-rating-stars {
     display: inline-flex;
   }
+}
+
+// Contrast pass: full stars keep the theme fill (brand red in the active
+// CravenSpeed variation); empties lighten so full vs empty separate cleanly.
+// Meta text steps up to greyDark below.
+.cs-reviews {
+  .icon--ratingEmpty svg {
+    fill: stencilColor('color-greyLighter');
+  }
+}
+
+// Single heading row: stars, numeric score, title, verified badge. The
+// nested title selector outranks the global `.tab-content h3` underline.
+.cs-review-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: spacing('half');
+
+  .cs-review-title {
+    border-bottom: 0;
+    margin: 0;
+  }
+}
+
+// Small dark pill so the score reads as a stat, not part of the title.
+.cs-review-score {
+  font-weight: 700;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.25rem 0.375rem;
+  border-radius: 4px;
+  background: stencilColor('color-textBase');
+  color: stencilColor('color-white');
 }
 
 .cs-review-title {
@@ -909,19 +939,29 @@ $cs-button-height: 50px;
   flex-wrap: wrap;
   gap: spacing('half');
   align-items: center;
-  color: stencilColor('color-textSecondary');
+  color: stencilColor('color-greyDark');
   font-size: 0.875rem;
   margin: 0 0 spacing('half');
 }
 
+.cs-review-author {
+  color: stencilColor('color-textBase');
+  font-weight: 600;
+}
+
 .cs-review-verified {
-  color: stencilColor('color-primary');
   font-weight: 700;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.25rem 0.375rem;
+  border-radius: 4px;
+  background: rgba(30, 235, 136, 0.18); // color-success at low alpha
+  color: #067647; // dark shade of the same green; readable on the chip
 }
 
 .cs-review-date {
   font-size: 0.875rem;
-  color: stencilColor('color-textSecondary');
+  color: stencilColor('color-greyDark');
 }
 
 .cs-review-vehicle {
@@ -970,6 +1010,15 @@ $cs-button-height: 50px;
   flex-direction: column;
   gap: spacing('quarter');
   font-size: 0.875rem;
+
+  // Mirrors .cs-reviews-control--toggle: 44px min-height centers the
+  // checkbox against the select's control row.
+  &--toggle {
+    flex-direction: row;
+    align-items: center;
+    gap: spacing('half');
+    min-height: 44px;
+  }
 }
 
 .cs-questions-control-label {
@@ -977,22 +1026,8 @@ $cs-button-height: 50px;
   font-weight: 600;
 }
 
-.cs-questions-select {
-  height: 44px;
-  font-size: 1rem;
-  padding: 0 spacing('half');
-  border: 1px solid stencilColor('color-greyLightest');
-
-  &:hover {
-    border-color: stencilColor('color-greyDark');
-  }
-
-  &:focus,
-  &:focus-visible {
-    border-color: stencilColor('color-primary');
-    outline: none;
-  }
-}
+// Visuals come from the shared .cs-form-select class (the add-to-cart option
+// dropdowns) on the same element — identical by construction.
 
 .cs-questions-pagination {
   min-height: 3rem;
@@ -1272,45 +1307,216 @@ $cs-button-height: 50px;
 // lightbox.
 // =============================================================================
 
-// Populated async from fetched review media, so one tile row of space is
-// reserved and the container is revealed via visibility, never display:none
-// (CLS rule). Stays hidden — space intact — when no review carries media.
+// The reviews-overview panel (the class name predates the summary joining the
+// gallery in it). Populated async, so a floor of space is reserved and the
+// container is revealed via visibility, never display:none (CLS rule). Stays
+// hidden — space intact — when the archetype has no reviews. The summary
+// stacks above the gallery on mobile and sits beside it from medium up.
 .cs-ugc-media-grid {
   display: flex;
-  flex-wrap: wrap;
-  gap: spacing('quarter');
+  flex-direction: column;
+  gap: spacing('single');
   margin: spacing('single') 0;
+  padding: spacing('single');
+  border-radius: 0.5rem;
+  background: stencilColor('color-greyLightest');
   min-height: 4.5rem;
   visibility: hidden;
 
   @include breakpoint('medium') {
+    flex-direction: row;
+    align-items: flex-start;
     min-height: 6rem;
+  }
+
+  .cs-media-tile {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    border-color: stencilColor('color-white');
+
+    &:hover,
+    &:focus-visible {
+      border-color: stencilColor('color-primary');
+    }
+  }
+
+  .cs-media-tile--more {
+    background: stencilColor('color-white');
   }
 }
 
+// The collage: square tiles flow in an auto-fill grid and the first tile
+// features at 2×2. ugcProduct.js measures the resolved column count here to
+// fill the two-row band exactly.
+.cs-ugc-media-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+  gap: spacing('half');
+  width: 100%;
+
+  @include breakpoint('medium') {
+    grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
+    flex: 1;
+    min-width: 0;
+  }
+
+  .cs-media-tile:first-of-type {
+    grid-column: span 2;
+    grid-row: span 2;
+  }
+}
+
+// Archetype-wide rating summary: average rating header, then the per-score
+// histogram (§3.2.1 archetype_rating_breakdown) when the envelope serves it.
+// Full-width above the gallery on mobile; a fixed left column beside it from
+// medium up, stretched to the gallery band's height so the histogram can
+// distribute through it.
+.cs-ugc-media-grid-summary {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('half');
+
+  @include breakpoint('medium') {
+    flex: 0 0 20rem;
+    align-self: stretch;
+    justify-content: center;
+  }
+}
+
+// Outsized header row: the panel's focal stat. Sprite stars need explicit
+// dimensions here (the theme has no global .icon sizing).
+.cs-ugc-summary-rating {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: spacing('half');
+
+  @include breakpoint('medium') {
+    justify-content: center;
+  }
+
+  .icon {
+    width: 1.5rem;
+    height: 1.5rem;
+
+    @include breakpoint('medium') {
+      width: 1.75rem;
+      height: 1.75rem;
+    }
+
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+  }
+}
+
+.cs-ugc-summary-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  max-width: 20rem;
+
+  @include breakpoint('medium') {
+    gap: 0.75rem;
+  }
+}
+
+.cs-ugc-breakdown-row {
+  display: flex;
+  align-items: center;
+  gap: spacing('half');
+  font-size: 0.875rem;
+
+  @include breakpoint('medium') {
+    font-size: 1rem;
+  }
+}
+
+.cs-ugc-breakdown-label {
+  min-width: 2rem;
+}
+
+.cs-ugc-breakdown-bar {
+  flex: 1;
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: 0.25rem;
+  background: stencilColor('color-white');
+
+  @include breakpoint('medium') {
+    height: 1rem;
+    border-radius: 0.5rem;
+  }
+}
+
+.cs-ugc-breakdown-fill {
+  display: block;
+  height: 100%;
+  background: stencilColor('color-primary');
+}
+
+.cs-ugc-breakdown-count {
+  min-width: 1.5rem;
+  text-align: right;
+  color: stencilColor('color-greyDark');
+}
+
+.cs-ugc-summary-average {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+
+  @include breakpoint('medium') {
+    font-size: 2.5rem;
+  }
+}
+
+.cs-ugc-summary-count {
+  color: stencilColor('color-greyDark');
+}
+
+// Painted by ugcProduct.js alongside the tiles; spans the full grid row so
+// the tiles flow beneath it. The global .tab-content heading underline reads
+// as a stray rule inside the panel, so it is dropped here (the descendant
+// selector outranks `.tab-content h3`).
+.cs-ugc-media-gallery .cs-ugc-media-grid-title {
+  grid-column: 1 / -1;
+  border-bottom: 0;
+  font-size: 1.125rem;
+  margin: 0;
+}
+
 // Per-review strip after the review body. Renders only when the review has
-// media, inside an already-async list, so no space reservation is needed here.
+// media, inside an already-async list, so no space reservation is needed
+// here. Tiles keep a fixed thumbnail size in this context.
 .cs-review-media {
   display: flex;
   flex-wrap: wrap;
   gap: spacing('quarter');
   margin-top: spacing('half');
+
+  .cs-media-tile {
+    width: 4.5rem;
+    height: 4.5rem;
+
+    @include breakpoint('medium') {
+      width: 6rem;
+      height: 6rem;
+    }
+  }
 }
 
 .cs-media-tile {
   position: relative;
-  width: 4.5rem;
-  height: 4.5rem;
   padding: 0;
   overflow: hidden;
   border: 1px solid stencilColor('color-greyLightest');
+  border-radius: 0.375rem;
   background: stencilColor('color-greyLightest');
   cursor: pointer;
-
-  @include breakpoint('medium') {
-    width: 6rem;
-    height: 6rem;
-  }
 
   &:hover,
   &:focus-visible {
@@ -1324,6 +1530,23 @@ $cs-button-height: 50px;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 0.2s ease;
+}
+
+.cs-media-tile:hover .cs-media-tile-thumb,
+.cs-media-tile:focus-visible .cs-media-tile-thumb {
+  transform: scale(1.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-media-tile-thumb {
+    transition: none;
+  }
+
+  .cs-media-tile:hover .cs-media-tile-thumb,
+  .cs-media-tile:focus-visible .cs-media-tile-thumb {
+    transform: none;
+  }
 }
 
 // Play affordance overlaid on a video tile's poster thumbnail.
@@ -1361,8 +1584,69 @@ $cs-button-height: 50px;
 
 // Shared media lightbox: reuses the cs-ugc-modal shell; centers the media and
 // widens the dialog so photos/video get room on desktop.
+// Browsable all-media gallery modal, opened from the panel's "+N" tile.
+// Tiles inside reuse .cs-media-tile; clicking one opens the lightbox, which
+// layers above this modal.
+.cs-ugc-gallery-dialog {
+  width: 100%;
+  max-width: 60rem;
+}
+
+.cs-ugc-gallery-title {
+  margin: 0 0 spacing('half');
+  font-size: 1.125rem;
+}
+
+.cs-ugc-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+  gap: spacing('half');
+  max-height: 60vh;
+  overflow-y: auto;
+
+  @include breakpoint('medium') {
+    grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  }
+
+  .cs-media-tile {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+  }
+}
+
+.cs-ugc-gallery-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: spacing('half');
+
+  > [hidden] {
+    display: none;
+  }
+}
+
 .cs-ugc-lightbox {
   align-items: center;
+
+  // Above the gallery modal (.cs-ugc-modal base is 1000), so a tile clicked
+  // inside it opens the viewer on top.
+  z-index: 1010;
+}
+
+// Full owning review rendered under the media for band / gallery-modal
+// tiles. Scrolls on its own so a long review never pushes the media off
+// screen.
+.cs-ugc-lightbox-review {
+  width: 100%;
+  margin-top: spacing('half');
+  max-height: 30vh;
+  overflow-y: auto;
+  text-align: left;
+
+  .cs-review {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
 }
 
 .cs-ugc-lightbox-dialog {
@@ -1374,9 +1658,11 @@ $cs-button-height: 50px;
   }
 }
 
+// Column stack: media on top, the owning review (when present) beneath.
 .cs-ugc-lightbox-content {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
   min-height: 4.5rem;
 }
 
@@ -1384,5 +1670,5 @@ $cs-button-height: 50px;
 .cs-ugc-lightbox-video {
   display: block;
   max-width: 100%;
-  max-height: 80vh;
+  max-height: 60vh;
 }

@@ -29,15 +29,20 @@
  * It mirrors the reviews list/sort/pagination pattern but has no filters and
  * renders each approved question with its single staff answer (§4.1 Question).
  *
- * Slice 6d (#7) adds alias-aware sorting. The module already subscribes to the
- * local StateManager; on each notify it reads the selected alias's published
- * `qty_alias_index` (SRS §3.1.4) off state.aliasData and, when it changes,
- * refetches BOTH reviews and questions with `sort_alias={qty_alias_index}` so
- * alias-matching items float to the top WITHIN the current sort, without
- * excluding non-matching items (SRS §3.2.1, §3.2.2, §3.4.1). Deselecting the
- * alias (aliasData cleared, or no integer index) drops the param. The active
- * sort and filters are preserved across the transition; only the page resets to
- * 1, since the relevance ordering shifts.
+ * Slice 6d (#7) adds alias-aware sorting; the 2026-06-05 visuals pass made it
+ * OPT-IN. The module subscribes to the local StateManager and tracks the
+ * selected alias's published `qty_alias_index` (SRS §3.1.4) off
+ * state.aliasData, but floating is user-controlled: a "My vehicle first"
+ * toggle in each toolbar (enabled only while an alias is selected). Only when
+ * the toggle is on do reviews and questions refetch with
+ * `sort_alias={qty_alias_index}`, floating alias-matching items WITHIN the
+ * current sort without excluding others (SRS §3.2.1, §3.2.2). Automatic
+ * floating was rejected as quietly misrepresenting the default order — this
+ * deviates from §3.4.1 as written (flagged to the cs-ugc PM for an SRS
+ * amendment). The active sort and filters are preserved across the
+ * transition; only the page resets to 1, since the relevance ordering
+ * shifts. The selected alias index itself still rides on submissions as
+ * `alias_id` regardless of the toggle.
  *
  * Slice 6e (#8) adds the submission modal: review and question forms posted to
  * POST /api/reviews and POST /api/questions via ugcApi (SRS §3.2.4, §3.2.5). Each
@@ -106,11 +111,19 @@ const SORT_VALUES = ['date_desc', 'date_asc', 'rating_desc', 'rating_asc'];
 // Questions support only date sorts (SRS §3.2.2) — no rating/verified/media.
 const QUESTION_SORT_VALUES = ['date_desc', 'date_asc'];
 
-// Top-level photo grid cap (issue #30): at most this many media tiles render
-// before the trailing "+N" tile that expands the grid to show the rest.
+// Top-level media grid fallback cap (issue #30): the collapsed grid normally
+// fills exactly the two-row band beside the featured tile, sized from the
+// grid's measured column count. This cap only applies when that measurement
+// is unavailable (no layout yet, or no ResizeObserver): at most this many
+// tiles render before the trailing "+N" tile that expands the grid.
 const MEDIA_GRID_MAX = 8;
 
+// Upper bound on §3.2.1 `media=true` pages the gallery fetches while topping
+// up the band — 30 media-bearing reviews covers any realistic band size.
+const GALLERY_MAX_PAGES = 3;
+
 const MESSAGES = {
+    mediaGridTitle: 'Customer Photos &amp; Videos',
     noReviews: 'No reviews yet. Be the first to review this product.',
     noMatches: 'No reviews match the selected filters.',
     loadError: 'Reviews are unavailable right now. Please try again later.',
@@ -151,6 +164,7 @@ export default class UgcProduct {
         // (SRS §3.2.1).
         this.ratingAverage = null;
         this.reviewCount = 0;
+        this.ratingBreakdown = null;
         this.summaryPainted = false;
 
         // Server-side query state (SRS §3.2.1 params). `rating` is the star
@@ -179,9 +193,16 @@ export default class UgcProduct {
         this.questionCount = 0;
         this.questionsLoaded = false;
 
-        // The integer alias index currently driving sort_alias (SRS §3.1.4 /
-        // §3.4.1), or null when no alias is selected. Tracked so an alias-driven
-        // refetch only fires when the selection actually changes.
+        // The selected alias's integer index (SRS §3.1.4), or null when no
+        // alias is selected. Rides on submissions as alias_id regardless of
+        // the float toggle.
+        this.aliasIndex = null;
+
+        // "My vehicle first" toggle state, and the effective sort_alias param
+        // derived from it: aliasIndex while the toggle is on AND an alias is
+        // selected, else null. Floating is opt-in — automatic floating reads
+        // as misrepresenting the default order.
+        this.vehicleFirst = false;
         this.sortAlias = null;
         this.reviewsLoaded = false;
 
@@ -212,14 +233,31 @@ export default class UgcProduct {
         this.questionsToolbarElement = document.querySelector('[data-questions-toolbar]');
         this.questionsPaginationElement = document.querySelector('[data-questions-pagination]');
 
-        // Review media display (issue #30, SRS §3.4.1): the top-level thumbnail
-        // grid container and the shared lightbox. gridMedia is the flattened
-        // media of the latest fetched reviews page, rebuilt on every render
-        // pass; gridExpanded tracks the "+N" tile state and resets per pass.
+        // Review media display (issue #30, SRS §3.4.1): the overview panel
+        // container and the shared lightbox. The gallery is its own data
+        // batch — the most recent media-bearing reviews (§3.2.1 media=true,
+        // date_desc), fetched once after the first list render and topped up
+        // page-by-page while the measured band has room. It is stable across
+        // the visible list's sort/filter/pagination. The band never expands
+        // in place — its "+N" tile opens the gallery modal.
         this.mediaGridElement = document.querySelector('[data-ugc-media-grid]');
         this.lightboxElement = document.querySelector('[data-ugc-lightbox]');
+        this.galleryModalElement = document.querySelector('[data-ugc-gallery]');
         this.gridMedia = [];
-        this.gridExpanded = false;
+        this.galleryRequested = false;
+        this.galleryLoading = false;
+        this.galleryExhausted = false;
+        this.galleryPagesFetched = 0;
+
+        // The collapsed grid fills exactly the two-row band beside the 2×2
+        // featured tile, so its capacity depends on the laid-out column count.
+        // A ResizeObserver re-measures when the grid first gains layout (the
+        // Reviews tab is hidden on load) and on viewport resizes.
+        this.gridCapacity = null;
+        if (this.mediaGridElement && typeof ResizeObserver !== 'undefined') {
+            this.gridResizeObserver = new ResizeObserver(() => this._onGridResize());
+            this.gridResizeObserver.observe(this.mediaGridElement);
+        }
 
         // Confirmed media held in upload order (SRS §3.4.4): each entry is the
         // canonical { url, type } returned by /api/media/confirm. Sent verbatim as
@@ -243,6 +281,7 @@ export default class UgcProduct {
         this.onQuestionOpenClick = this.onQuestionOpenClick.bind(this);
         this.onMediaTileClick = this.onMediaTileClick.bind(this);
         this.onLightboxClick = this.onLightboxClick.bind(this);
+        this.onGalleryModalClick = this.onGalleryModalClick.bind(this);
 
         const hasReviewsDom = this.ratingElement || this.listElement;
 
@@ -291,6 +330,10 @@ export default class UgcProduct {
 
         if (this.lightboxElement) {
             this.lightboxElement.addEventListener('click', this.onLightboxClick);
+        }
+
+        if (this.galleryModalElement) {
+            this.galleryModalElement.addEventListener('click', this.onGalleryModalClick);
         }
     }
 
@@ -692,8 +735,8 @@ export default class UgcProduct {
             website: fields.website,
         };
 
-        if (this.sortAlias !== null) {
-            payload.alias_id = this.sortAlias;
+        if (this.aliasIndex !== null) {
+            payload.alias_id = this.aliasIndex;
         }
 
         if (fields.vehicle_label) {
@@ -726,8 +769,8 @@ export default class UgcProduct {
             website: fields.website,
         };
 
-        if (this.sortAlias !== null) {
-            payload.alias_id = this.sortAlias;
+        if (this.aliasIndex !== null) {
+            payload.alias_id = this.aliasIndex;
         }
 
         if (fields.vehicle_label) {
@@ -941,6 +984,11 @@ export default class UgcProduct {
         const count = data.archetype_review_count;
         this.ratingAverage = average === undefined ? null : average;
         this.reviewCount = count === null || count === undefined ? 0 : count;
+        // Per-score counts (§3.2.1 archetype_rating_breakdown): filter-constant
+        // like the two aggregates above, zero-filled with all five keys when
+        // served. Null until the UGC API ships it — the histogram simply
+        // doesn't render then.
+        this.ratingBreakdown = data.archetype_rating_breakdown || null;
 
         this.renderSummary();
         this.summaryPainted = true;
@@ -988,8 +1036,14 @@ export default class UgcProduct {
 
         const items = Array.isArray(data.items) ? data.items : [];
         this.renderList(items);
-        this.renderMediaGrid(items);
         this.renderPagination();
+
+        // The gallery is its own data batch, independent of this render pass —
+        // kick off its one-time load after the first successful list render.
+        if (this.mediaGridElement && !this.galleryRequested) {
+            this.galleryRequested = true;
+            this._loadGalleryMedia();
+        }
     }
 
     /**
@@ -1034,15 +1088,43 @@ export default class UgcProduct {
      */
     applyAliasSort(state) {
         const nextAlias = this._resolveAliasIndex(state);
-        if (nextAlias === this.sortAlias) {
+        if (nextAlias === this.aliasIndex) {
             return;
         }
 
-        this.sortAlias = nextAlias;
+        this.aliasIndex = nextAlias;
+        this._syncVehicleToggles();
+        this._applySortAlias();
+    }
+
+    /**
+     * The "My vehicle first" toggle changed (either toolbar). Both lists
+     * share the one preference.
+     * @param {boolean} checked
+     */
+    _setVehicleFirst(checked) {
+        this.vehicleFirst = checked;
+        this._syncVehicleToggles();
+        this._applySortAlias();
+    }
+
+    /**
+     * Re-derive the effective sort_alias (toggle on AND alias selected) and,
+     * when it changes, refetch both lists so alias-matching items float to
+     * the top within the current sort, preserving the active sort and filters
+     * and resetting only the page (the relevance order shifts).
+     */
+    _applySortAlias() {
+        const effective = this.vehicleFirst && this.aliasIndex !== null ? this.aliasIndex : null;
+        if (effective === this.sortAlias) {
+            return;
+        }
+
+        this.sortAlias = effective;
 
         // Only refetch a list that has completed its initial load, so the
-        // alias-driven refetch layers on top of an established list rather than
-        // racing the in-flight init fetch (which reads sort_alias live anyway).
+        // refetch layers on top of an established list rather than racing the
+        // in-flight init fetch (which reads sort_alias live anyway).
         if (this.reviewsLoaded) {
             this.query.page = 1;
             this.fetchReviews();
@@ -1051,6 +1133,22 @@ export default class UgcProduct {
         if (this.questionsLoaded) {
             this.questionQuery.page = 1;
             this.fetchQuestions();
+        }
+    }
+
+    /**
+     * Mirror the shared toggle state onto both toolbars' checkboxes: checked
+     * follows the preference, disabled while no alias is selected (the
+     * control is meaningless without a vehicle).
+     */
+    _syncVehicleToggles() {
+        const toggles = document.querySelectorAll(
+            '[data-reviews-control="vehicle_first"], [data-questions-control="vehicle_first"]',
+        );
+
+        for (let i = 0; i < toggles.length; i += 1) {
+            toggles[i].checked = this.vehicleFirst;
+            toggles[i].disabled = this.aliasIndex === null;
         }
     }
 
@@ -1094,6 +1192,11 @@ export default class UgcProduct {
             this.query.verified = target.checked ? true : null;
         } else if (reviewsControl === 'media') {
             this.query.media = target.checked ? true : null;
+        } else if (reviewsControl === 'vehicle_first') {
+            // Shared toggle — refetches both lists itself when the effective
+            // sort_alias changes.
+            this._setVehicleFirst(target.checked);
+            return;
         } else {
             return;
         }
@@ -1180,6 +1283,14 @@ export default class UgcProduct {
         }
 
         const { questionsControl } = target.dataset;
+
+        if (questionsControl === 'vehicle_first') {
+            // Shared toggle — refetches both lists itself when the effective
+            // sort_alias changes.
+            this._setVehicleFirst(target.checked);
+            return;
+        }
+
         if (questionsControl !== 'sort') {
             return;
         }
@@ -1371,18 +1482,76 @@ export default class UgcProduct {
      * "+N" expansion collapses back on each rebuild.
      * @param {Object[]} items - The current page of review objects (§3.2.1).
      */
-    renderMediaGrid(items) {
-        this.gridExpanded = false;
-        this.gridMedia = this._collectGridMedia(items);
+    /**
+     * Fetch the next page of the gallery's own data batch (§3.2.1
+     * `media=true`, newest first): the most recent media-bearing reviews,
+     * independent of the visible list's sort/filter/page. Appends to
+     * gridMedia and resolves true when a page landed; a failed fetch marks
+     * the batch exhausted and resolves false.
+     * @returns {Promise<boolean>}
+     */
+    async _fetchGalleryPage() {
+        if (this.galleryLoading || this.galleryExhausted) {
+            return false;
+        }
+
+        this.galleryLoading = true;
+        const result = await this.api.getReviews(this.archetypeId, {
+            media: true,
+            sort: 'date_desc',
+            page: this.galleryPagesFetched + 1,
+        });
+        this.galleryLoading = false;
+
+        if (!result.ok) {
+            this.galleryExhausted = true;
+            return false;
+        }
+
+        const data = result.data || {};
+        const items = Array.isArray(data.items) ? data.items : [];
+        this.galleryPagesFetched += 1;
+
+        const total = Number.isFinite(data.total) ? data.total : null;
+        const perPage = Number.isFinite(data.per_page) ? data.per_page : items.length;
+
+        if (!items.length || (total !== null && this.galleryPagesFetched * perPage >= total)) {
+            this.galleryExhausted = true;
+        }
+
+        this.gridMedia = this.gridMedia.concat(this._collectGridMedia(items));
+        return true;
+    }
+
+    /**
+     * Top the band up one page at a time (bounded by GALLERY_MAX_PAGES)
+     * while the measured band has unfilled cells, repainting after every
+     * landed page. A failed fetch stops quietly — the panel shows whatever
+     * it already has.
+     */
+    async _loadGalleryMedia() {
+        const capacity = this.gridCapacity || MEDIA_GRID_MAX + 1;
+
+        if (this.galleryPagesFetched >= GALLERY_MAX_PAGES || this.gridMedia.length >= capacity) {
+            return;
+        }
+
+        const fetched = await this._fetchGalleryPage();
         this._paintMediaGrid();
+
+        if (fetched) {
+            await this._loadGalleryMedia();
+        }
     }
 
     /**
      * Flatten the reviews' media arrays into grid entries, preserving review
      * order and each array's server-supplied sort_order ordering (index 0
-     * first; SRS §3.2.1). Items without a usable `url` are dropped defensively.
+     * first; SRS §3.2.1). Items without a usable `url` are dropped
+     * defensively. Each entry keeps its owning review so the lightbox can
+     * show the full review beside the media.
      * @param {Object[]} items
-     * @returns {Object[]} Entries of { media, author }.
+     * @returns {Object[]} Entries of { media, review }.
      */
     _collectGridMedia(items) {
         const collected = [];
@@ -1391,7 +1560,7 @@ export default class UgcProduct {
             const media = Array.isArray(review.media) ? review.media : [];
             media.forEach((item) => {
                 if (item && item.url) {
-                    collected.push({ media: item, author: review.author });
+                    collected.push({ media: item, review });
                 }
             });
         });
@@ -1400,37 +1569,142 @@ export default class UgcProduct {
     }
 
     /**
-     * Paint the grid from gridMedia / gridExpanded. Empty media keeps the
-     * container's reserved space but hides it via visibility (CLS rule — the
-     * grid populates async, so it never collapses with display:none). When more
-     * than MEDIA_GRID_MAX items exist and the grid is collapsed, a trailing
-     * "+N" tile expands it in place.
+     * Paint the reviews-overview panel: the archetype rating summary header
+     * plus the media collage from gridMedia. The panel renders
+     * whenever the archetype has reviews — with no media it carries the
+     * summary alone. With neither, the container keeps its reserved space but
+     * hides via visibility (CLS rule — it populates async, so it never
+     * collapses with display:none). When more media exists than the band
+     * holds — locally or still on the server — a trailing "+N" tile opens
+     * the browsable gallery modal.
      */
     _paintMediaGrid() {
         if (!this.mediaGridElement) {
             return;
         }
 
+        const summary = this._buildPanelSummary();
         const total = this.gridMedia.length;
 
-        if (!total) {
+        if (!total && !summary) {
             this.mediaGridElement.innerHTML = '';
             this.mediaGridElement.style.visibility = 'hidden';
             return;
         }
 
-        const overflow = !this.gridExpanded && total > MEDIA_GRID_MAX;
-        const visible = overflow ? this.gridMedia.slice(0, MEDIA_GRID_MAX) : this.gridMedia;
-        const tiles = visible.map(entry => this._buildMediaTile(entry.media, entry.author));
+        let gallery = '';
 
-        if (overflow) {
-            const hidden = total - MEDIA_GRID_MAX;
-            const label = hidden === 1 ? 'Show 1 more media item' : `Show ${hidden} more media items`;
-            tiles.push(`<button type="button" class="cs-media-tile cs-media-tile--more" data-ugc-media-expand aria-label="${label}">+${hidden}</button>`);
+        if (total) {
+            // Capacity counts grid elements (tiles plus any "+N") that fill the
+            // two-row band exactly; when unmeasured, fall back to the fixed cap.
+            // The band never grows in place — "+N" opens the gallery modal,
+            // and it also shows when the server holds more media than the
+            // batch has fetched so far.
+            const capacity = this.gridCapacity || MEDIA_GRID_MAX + 1;
+            const overflow = total > capacity || !this.galleryExhausted;
+            const visible = overflow ? this.gridMedia.slice(0, capacity - 1) : this.gridMedia;
+            const tiles = visible.map((entry, index) => this._buildMediaTile(entry.media, entry.review.author, index));
+
+            if (overflow) {
+                const hidden = total - visible.length;
+                const text = hidden > 0 ? `+${hidden}` : '&hellip;';
+                tiles.push(`<button type="button" class="cs-media-tile cs-media-tile--more" data-ugc-media-expand aria-label="View all customer photos and videos">${text}</button>`);
+            }
+
+            gallery = `<div class="cs-ugc-media-gallery" data-ugc-media-gallery><h3 class="cs-ugc-media-grid-title">${MESSAGES.mediaGridTitle} (${total})</h3>${tiles.join('')}</div>`;
         }
 
-        this.mediaGridElement.innerHTML = tiles.join('');
+        this.mediaGridElement.innerHTML = summary + gallery;
         this.mediaGridElement.style.visibility = 'visible';
+    }
+
+    /**
+     * Re-measure the collapsed grid's capacity after layout changes (tab
+     * activation, viewport resize) and repaint only when it actually changed.
+     * An expanded grid keeps showing everything until the next render pass.
+     */
+    _onGridResize() {
+        const capacity = this._measureGridCapacity();
+
+        if (capacity !== this.gridCapacity) {
+            this.gridCapacity = capacity;
+            this._paintMediaGrid();
+
+            // A wider band may want more tiles than the batch holds.
+            if (this.galleryRequested) {
+                this._loadGalleryMedia();
+            }
+        }
+    }
+
+    /**
+     * Derive how many grid elements fill the two-row band from the browser's
+     * resolved column tracks (authoritative — no duplication of the SCSS
+     * auto-fill math). The 2×2 featured tile occupies four cells, so a
+     * cols-wide band holds (cols * 2) - 3 elements. Returns null when the grid
+     * has no resolved layout yet (e.g. inside the inactive Reviews tab).
+     * @returns {?number}
+     */
+    _measureGridCapacity() {
+        const gallery = this.mediaGridElement.querySelector('[data-ugc-media-gallery]');
+
+        if (!gallery) {
+            return null;
+        }
+
+        const style = window.getComputedStyle(gallery);
+        const tracks = (style.gridTemplateColumns || '').split(' ').filter(track => track.endsWith('px'));
+        const cols = tracks.length;
+
+        if (cols < 3) {
+            return null;
+        }
+
+        return (cols * 2) - 3;
+    }
+
+    /**
+     * Archetype-wide rating header for the overview panel: average stars, the
+     * numeric average, and the review count (the cached, filter-constant
+     * envelope aggregates). Empty string before the first envelope lands or
+     * when the archetype has no approved reviews. A breakdown by score joins
+     * here once the §3.2.1 envelope serves an aggregate for it.
+     * @returns {string}
+     */
+    _buildPanelSummary() {
+        if (this.ratingAverage === null || !this.reviewCount) {
+            return '';
+        }
+
+        const average = Math.round(this.ratingAverage * 10) / 10;
+        const rating = `<div class="cs-ugc-summary-rating">${this._buildStars(this.ratingAverage)}<span class="cs-ugc-summary-average">${average}</span><span class="cs-ugc-summary-count">${this._countLabel(this.reviewCount)}</span></div>`;
+        return `<div class="cs-ugc-media-grid-summary">${rating}${this._buildBreakdown()}</div>`;
+    }
+
+    /**
+     * Per-score histogram from the cached §3.2.1 archetype_rating_breakdown,
+     * rendered 5★ down to 1★ with bars proportional to the review count.
+     * Empty string until the UGC API serves the field. The spec guarantees
+     * all five keys zero-filled and sum == archetype_review_count, so bar
+     * math needs no per-key guards.
+     * @returns {string}
+     */
+    _buildBreakdown() {
+        if (!this.ratingBreakdown || !this.reviewCount) {
+            return '';
+        }
+
+        const rows = [];
+
+        for (let score = MAX_STARS; score >= 1; score -= 1) {
+            const count = this.ratingBreakdown[String(score)];
+            const percent = Math.round((count / this.reviewCount) * 100);
+            const noun = count === 1 ? 'review' : 'reviews';
+            const starNoun = score === 1 ? 'star' : 'stars';
+            rows.push(`<div class="cs-ugc-breakdown-row" role="img" aria-label="${count} ${noun} at ${score} ${starNoun}"><span class="cs-ugc-breakdown-label" aria-hidden="true">${score}★</span><span class="cs-ugc-breakdown-bar" aria-hidden="true"><span class="cs-ugc-breakdown-fill" style="width: ${percent}%"></span></span><span class="cs-ugc-breakdown-count" aria-hidden="true">${count}</span></div>`);
+        }
+
+        return `<div class="cs-ugc-summary-breakdown">${rows.join('')}</div>`;
     }
 
     /**
@@ -1442,16 +1716,21 @@ export default class UgcProduct {
      * with an aria-label, since the poster image alone names nothing.
      * @param {Object} media - A §3.2.1 media item.
      * @param {string} [author] - The owning review's author, for labels.
+     * @param {number} [index] - The entry's gridMedia index. Present on band
+     *     and gallery-modal tiles, where the lightbox shows the full owning
+     *     review; absent on per-review strips (their review is already on
+     *     screen).
      * @returns {string}
      */
-    _buildMediaTile(media, author) {
+    _buildMediaTile(media, author, index) {
         const isVideo = media.type === 'video';
         const thumb = media.thumb_url || media.poster_url || media.medium_url || media.url;
         const src = isVideo ? media.url : (media.medium_url || media.url);
         const source = author ? `${author}'s review` : 'a customer review';
         const label = isVideo ? `Video from ${source}` : `Photo from ${source}`;
         const escapedLabel = this._escapeAttr(label);
-        const common = `data-ugc-media-tile data-ugc-media-type="${isVideo ? 'video' : 'photo'}" data-ugc-media-src="${this._escapeAttr(src)}" data-ugc-media-label="${escapedLabel}"`;
+        const indexAttr = index === undefined ? '' : ` data-ugc-media-index="${index}"`;
+        const common = `data-ugc-media-tile${indexAttr} data-ugc-media-type="${isVideo ? 'video' : 'photo'}" data-ugc-media-src="${this._escapeAttr(src)}" data-ugc-media-label="${escapedLabel}"`;
 
         if (isVideo) {
             const poster = media.poster_url ? ` data-ugc-media-poster="${this._escapeAttr(media.poster_url)}"` : '';
@@ -1484,14 +1763,13 @@ export default class UgcProduct {
 
     /**
      * Delegated click handler for media tiles in the grid and the per-review
-     * strips. The "+N" tile expands the grid in place; any other tile opens
+     * strips. The "+N" tile opens the gallery modal; any other tile opens
      * the lightbox from its dataset.
      * @param {MouseEvent} event
      */
     onMediaTileClick(event) {
         if (event.target.closest('[data-ugc-media-expand]')) {
-            this.gridExpanded = true;
-            this._paintMediaGrid();
+            this.openGalleryModal();
             return;
         }
 
@@ -1505,6 +1783,86 @@ export default class UgcProduct {
         if (event.target.closest('[data-ugc-lightbox-close]')) {
             this.closeLightbox();
         }
+    }
+
+    /**
+     * Delegated click handler for the all-media gallery modal: dismissal,
+     * Load more paging, and tiles opening the lightbox (which layers above
+     * the modal).
+     * @param {MouseEvent} event
+     */
+    onGalleryModalClick(event) {
+        if (event.target.closest('[data-ugc-gallery-close]')) {
+            this.closeGalleryModal();
+            return;
+        }
+
+        if (event.target.closest('[data-ugc-gallery-more]')) {
+            this._loadMoreGalleryMedia();
+            return;
+        }
+
+        const tile = event.target.closest('[data-ugc-media-tile]');
+        if (tile) {
+            this.openLightbox(tile.dataset);
+        }
+    }
+
+    /**
+     * Open the browsable gallery of every fetched media item. The panel's
+     * band stays capped — browsing all media (archetypes can carry hundreds
+     * of items) happens here instead of growing the page in place.
+     */
+    openGalleryModal() {
+        if (!this.galleryModalElement) {
+            return;
+        }
+
+        this._paintGalleryModal();
+        this.galleryModalElement.hidden = false;
+    }
+
+    closeGalleryModal() {
+        if (this.galleryModalElement) {
+            this.galleryModalElement.hidden = true;
+        }
+    }
+
+    /**
+     * Paint the modal's grid from the full fetched batch and toggle Load
+     * more on whether the server has more media-bearing reviews (§3.2.1
+     * `total` vs pages fetched).
+     */
+    _paintGalleryModal() {
+        if (!this.galleryModalElement) {
+            return;
+        }
+
+        const gridElement = this.galleryModalElement.querySelector('[data-ugc-gallery-grid]');
+        if (gridElement) {
+            gridElement.innerHTML = this.gridMedia.map((entry, index) => this._buildMediaTile(entry.media, entry.review.author, index)).join('');
+        }
+
+        const more = this.galleryModalElement.querySelector('[data-ugc-gallery-more]');
+        if (more) {
+            more.hidden = this.galleryExhausted;
+        }
+    }
+
+    /**
+     * User-driven paging from the modal's Load more button: one further
+     * §3.2.1 media=true page per click, unbounded by the band's
+     * GALLERY_MAX_PAGES top-up budget. Repaints both the modal grid and the
+     * panel band ("+N" count grows with the batch).
+     */
+    async _loadMoreGalleryMedia() {
+        const fetched = await this._fetchGalleryPage();
+
+        if (fetched) {
+            this._paintMediaGrid();
+        }
+
+        this._paintGalleryModal();
     }
 
     /**
@@ -1524,14 +1882,27 @@ export default class UgcProduct {
 
         const src = this._escapeAttr(dataset.ugcMediaSrc || '');
         const label = this._escapeAttr(dataset.ugcMediaLabel || '');
+        let media;
 
         if (dataset.ugcMediaType === 'video') {
             const poster = dataset.ugcMediaPoster ? ` poster="${this._escapeAttr(dataset.ugcMediaPoster)}"` : '';
-            content.innerHTML = `<video class="cs-ugc-lightbox-video" src="${src}"${poster} controls autoplay playsinline aria-label="${label}"></video>`;
+            media = `<video class="cs-ugc-lightbox-video" src="${src}"${poster} controls autoplay playsinline aria-label="${label}"></video>`;
         } else {
-            content.innerHTML = `<img class="cs-ugc-lightbox-img" src="${src}" alt="${label}">`;
+            media = `<img class="cs-ugc-lightbox-img" src="${src}" alt="${label}">`;
         }
 
+        // Band and gallery-modal tiles carry their gridMedia index — show the
+        // full owning review under the media. Per-review strip tiles don't
+        // (their review is already on screen).
+        let review = '';
+        const entry = dataset.ugcMediaIndex === undefined
+            ? null
+            : this.gridMedia[parseInt(dataset.ugcMediaIndex, 10)];
+        if (entry && entry.review) {
+            review = `<div class="cs-ugc-lightbox-review">${this._buildReview(entry.review, false)}</div>`;
+        }
+
+        content.innerHTML = media + review;
         this.lightboxElement.hidden = false;
     }
 
@@ -1571,8 +1942,13 @@ export default class UgcProduct {
             this.paginationElement.style.visibility = 'hidden';
         }
 
-        // No fetched reviews means no media to source — clear the grid too.
-        this.renderMediaGrid([]);
+        // The reviews list is unavailable, so hide the overview panel with it
+        // and re-arm the gallery load for the next successful render.
+        this.gridMedia = [];
+        this.galleryRequested = false;
+        this.galleryPagesFetched = 0;
+        this.galleryExhausted = false;
+        this._paintMediaGrid();
     }
 
     _buildStars(average) {
@@ -1591,7 +1967,7 @@ export default class UgcProduct {
         return count === 1 ? '1 review' : `${count} reviews`;
     }
 
-    _buildReview(review) {
+    _buildReview(review, includeMedia = true) {
         const author = this._escape(review.author) || MESSAGES.anonymous;
         const title = this._escape(review.title);
         const body = this._escape(review.body);
@@ -1603,16 +1979,21 @@ export default class UgcProduct {
         const staff = review.staff_response
             ? `<div class="cs-review-staff"><strong>CravenSpeed:</strong> ${this._escape(review.staff_response)}</div>`
             : '';
-        const media = this._buildReviewMedia(review);
+        // The lightbox renders the review beside the media itself — its strip
+        // would just be inert duplicate thumbnails there.
+        const media = includeMedia ? this._buildReviewMedia(review) : '';
 
         return `
             <article class="cs-review">
-                ${this._buildStars(review.rating || 0)}
-                ${title ? `<h3 class="cs-review-title">${title}</h3>` : ''}
+                <div class="cs-review-heading">
+                    ${date ? `<span class="cs-review-date">${date}</span>` : ''}
+                    ${this._buildStars(review.rating || 0)}
+                    <span class="cs-review-score">${review.rating || 0}</span>
+                    ${title ? `<h3 class="cs-review-title">${title}</h3>` : ''}
+                </div>
                 <p class="cs-review-meta">
                     <span class="cs-review-author">${author}</span>
                     ${verified}
-                    ${date ? `<span class="cs-review-date">${date}</span>` : ''}
                 </p>
                 ${vehicle ? `<p class="cs-review-vehicle">${vehicle}</p>` : ''}
                 <p class="cs-review-body">${body}</p>
@@ -1633,8 +2014,8 @@ export default class UgcProduct {
 
         return parsed.toLocaleDateString('en-US', {
             year: 'numeric',
-            month: 'long',
-            day: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
         });
     }
 
@@ -1662,6 +2043,10 @@ export default class UgcProduct {
     destroy() {
         if (this.unsubscribe) this.unsubscribe();
 
+        if (this.gridResizeObserver) {
+            this.gridResizeObserver.disconnect();
+        }
+
         if (this.toolbarElement) {
             this.toolbarElement.removeEventListener('change', this.onToolbarChange);
         }
@@ -1688,6 +2073,10 @@ export default class UgcProduct {
 
         if (this.lightboxElement) {
             this.lightboxElement.removeEventListener('click', this.onLightboxClick);
+        }
+
+        if (this.galleryModalElement) {
+            this.galleryModalElement.removeEventListener('click', this.onGalleryModalClick);
         }
 
         const reviewOpen = document.querySelector('[data-review-modal-open]');
