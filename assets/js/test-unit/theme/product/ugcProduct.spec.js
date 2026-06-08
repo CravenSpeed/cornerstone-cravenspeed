@@ -187,6 +187,43 @@ describe('UgcProduct (slice 6a)', () => {
         expect(list.querySelectorAll('.cs-review-verified')).toHaveLength(1);
     });
 
+    it('renders the "Edited by CravenSpeed" marker only when edited === true (SRS §3.2.1, #145)', async () => {
+        const api = buildApi({
+            ok: true,
+            status: 200,
+            data: buildEnvelope({
+                items: [
+                    // edited === true → marker shown.
+                    {
+                        id: 1, author: 'A', rating: 5, title: 't', body: 'b',
+                        date: '2026-01-15T00:00:00Z', edited: true,
+                    },
+                    // edited === false → nothing.
+                    {
+                        id: 2, author: 'B', rating: 4, title: 't', body: 'b',
+                        date: '2026-02-01T00:00:00Z', edited: false,
+                    },
+                    // field absent (older payload) → defensive no-render, card intact.
+                    {
+                        id: 3, author: 'C', rating: 3, title: 't', body: 'b',
+                        date: '2026-03-01T00:00:00Z',
+                    },
+                ],
+            }),
+        });
+
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        const list = document.querySelector('#product-reviews');
+        // Exactly one marker — only the edited === true review.
+        const markers = list.querySelectorAll('.cs-review-edited');
+        expect(markers).toHaveLength(1);
+        expect(markers[0].textContent).toEqual('Edited by CravenSpeed');
+        // The absent-field card still rendered fully (no break on missing flag).
+        expect(list.querySelectorAll('.cs-review')).toHaveLength(3);
+    });
+
     it('renders the "no reviews yet" state when archetype_rating_average is null', async () => {
         const api = buildApi({
             ok: true,

@@ -959,6 +959,19 @@ $cs-button-height: 50px;
   color: #067647; // dark shade of the same green; readable on the chip
 }
 
+// Disclosure marker, not a positive badge (cs-ugc #145, SRS §3.1.1): staff
+// edited this review's content. Deliberately muted/neutral so it reads as
+// transparency, distinct from the green "Verified Purchaser" chip above.
+.cs-review-edited {
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.25rem 0.375rem;
+  border-radius: 4px;
+  background: stencilColor('color-greyLightest');
+  color: stencilColor('color-greyDarker'); // #333 on #e5e5e5 clears WCAG AA
+  font-style: italic;
+}
+
 .cs-review-date {
   font-size: 0.875rem;
   color: stencilColor('color-greyDark');
