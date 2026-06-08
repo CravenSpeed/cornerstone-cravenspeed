@@ -1,3 +1,5 @@
+import { generationLabel } from '../vehicleFitment';
+
 export default class SearchEngine {
     constructor(data) {
         this.data = data || {};
@@ -107,7 +109,7 @@ export default class SearchEngine {
         if (modelSlug && registry.models && registry.models[modelSlug]) {
             modelName = registry.models[modelSlug].name || modelSlug;
             if (genSlug && registry.models[modelSlug].generations && registry.models[modelSlug].generations[genSlug]) {
-                genName = registry.models[modelSlug].generations[genSlug];
+                genName = generationLabel(registry.models[modelSlug].generations[genSlug]) || genSlug;
             }
         }
 
@@ -235,8 +237,8 @@ export default class SearchEngine {
                 if (modelData.name) addIds(modelData.name, ids);
 
                 if (modelData.generations) {
-                    Object.entries(modelData.generations).forEach(([genId, genName]) => {
-                        addIds(genName, [genId]);
+                    Object.entries(modelData.generations).forEach(([genId, genNode]) => {
+                        addIds(generationLabel(genNode), [genId]);
                     });
                 }
             });

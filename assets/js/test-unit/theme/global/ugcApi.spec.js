@@ -39,13 +39,37 @@ describe('ugcApi', () => {
             const fetchImpl = jest.fn(() => Promise.resolve(mockResponse(200, body)));
             const api = makeApi(fetchImpl);
 
-            const result = await api.getReviews(12, { page: 2, sort: 'rating_desc', sort_alias: 4821 });
+            const result = await api.getReviews(12, { page: 2, sort: 'rating_desc', fitment_id: 87 });
 
             expect(fetchImpl).toHaveBeenCalledWith(
-                `${API}/reviews/12?page=2&sort=rating_desc&sort_alias=4821`,
+                `${API}/reviews/12?page=2&sort=rating_desc&fitment_id=87`,
                 { cache: 'no-cache' },
             );
             expect(result).toEqual({ ok: true, status: 200, data: body });
+        });
+
+        it('getReviews passes the fitment filter params (fitment_id + fitment_only)', async () => {
+            const fetchImpl = jest.fn(() => Promise.resolve(mockResponse(200, {})));
+            const api = makeApi(fetchImpl);
+
+            await api.getReviews(12, { fitment_id: 87, fitment_only: true });
+
+            expect(fetchImpl).toHaveBeenCalledWith(
+                `${API}/reviews/12?fitment_id=87&fitment_only=true`,
+                { cache: 'no-cache' },
+            );
+        });
+
+        it('getQuestions passes the fitment filter params (fitment_id + fitment_only)', async () => {
+            const fetchImpl = jest.fn(() => Promise.resolve(mockResponse(200, { items: [] })));
+            const api = makeApi(fetchImpl);
+
+            await api.getQuestions(12, { fitment_id: 87, fitment_only: true });
+
+            expect(fetchImpl).toHaveBeenCalledWith(
+                `${API}/questions/12?fitment_id=87&fitment_only=true`,
+                { cache: 'no-cache' },
+            );
         });
 
         it('getReviews omits null/undefined/empty params', async () => {
