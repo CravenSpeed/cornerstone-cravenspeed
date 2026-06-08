@@ -1,5 +1,6 @@
 import StateManager from '../global/stateManager';
 import VehiclePersistence from '../global/vehiclePersistence';
+import { generationLabel } from '../global/vehicleFitment';
 
 export default class VehicleSelector {
     constructor(context) {
@@ -111,7 +112,8 @@ export default class VehicleSelector {
             const modelSlug = this.modelSelect.value;
             if (modelSlug && this.registry.models[modelSlug]) {
                 const generations = this.registry.models[modelSlug].generations || {};
-                const gens = Object.entries(generations).map(([id, name]) => ({ id, name }))
+                const gens = Object.entries(generations)
+                    .map(([id, node]) => ({ id, name: generationLabel(node) || id }))
                     .sort((a, b) => b.name.localeCompare(a.name)); // Sort descending by name
                 gens.forEach(g => this.addOption(this.yearSelect, g.id, g.name));
 

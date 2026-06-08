@@ -156,7 +156,11 @@ export class UgcApi {
     /**
      * Approved reviews for an archetype, pooled across its aliases (SRS §3.2.1).
      * @param {number|string} archetypeId
-     * @param {Object} [params] - page, sort, rating, verified, media, sort_alias.
+     * @param {Object} [params] - page, sort, rating, verified, media, and the
+     *   fitment filter: `fitment_id` (integer — the visitor's garage vehicle,
+     *   whose pre-filter match count returns as `fitment_review_count`) and
+     *   `fitment_only` (boolean — when true, requires `fitment_id` and hard-filters
+     *   to it). Null/empty params are dropped by buildQuery and simply omitted.
      * @returns {Promise<Object>}
      */
     getReviews(archetypeId, params = {}) {
@@ -166,7 +170,10 @@ export class UgcApi {
     /**
      * Approved questions and staff answers for an archetype (SRS §3.2.2).
      * @param {number|string} archetypeId
-     * @param {Object} [params] - page, sort, sort_alias.
+     * @param {Object} [params] - page, sort, and the fitment filter: `fitment_id`
+     *   (integer — sets the fitment whose pre-filter match count returns as
+     *   `fitment_question_count`) and `fitment_only` (boolean — when true, requires
+     *   `fitment_id` and hard-filters to it).
      * @returns {Promise<Object>}
      */
     getQuestions(archetypeId, params = {}) {
