@@ -29,20 +29,30 @@
  * It mirrors the reviews list/sort/pagination pattern but has no filters and
  * renders each approved question with its single staff answer (§4.1 Question).
  *
- * Slice 6d (#7) adds alias-aware sorting; the 2026-06-05 visuals pass made it
- * OPT-IN. The module subscribes to the local StateManager and tracks the
- * selected alias's published `qty_alias_index` (SRS §3.1.4) off
- * state.aliasData, but floating is user-controlled: a "My vehicle first"
- * toggle in each toolbar (enabled only while an alias is selected). Only when
- * the toggle is on do reviews and questions refetch with
- * `sort_alias={qty_alias_index}`, floating alias-matching items WITHIN the
- * current sort without excluding others (SRS §3.2.1, §3.2.2). Automatic
- * floating was rejected as quietly misrepresenting the default order — this
- * deviates from §3.4.1 as written (flagged to the cs-ugc PM for an SRS
- * amendment). The active sort and filters are preserved across the
- * transition; only the page resets to 1, since the relevance ordering
- * shifts. The selected alias index itself still rides on submissions as
- * `alias_id` regardless of the toggle.
+ * Slice 6d (#7) tracked the selected alias's published `qty_alias_index`
+ * (SRS §3.1.4) off state.aliasData and rode it as `alias_id` on submissions.
+ * That still holds — `alias_id` is retained as nullable provenance (SRS §3.1.4,
+ * change-log Pass 25). What was REMOVED in M9 Slice A (#158) is the old
+ * "my vehicle first" relevance sort: the `sort_alias` param and its opt-in
+ * toggle are gone, superseded by the fitment filter below at the correct grain
+ * (a fitment spans many aliases; the alias-keyed sort floated only the
+ * currently-viewed variant — SRS change-log Pass 25/27).
+ *
+ * Slice A (#158) makes the lists fitment-aware (SRS §3.4.1, §3.2.1, §3.2.2).
+ * The module resolves the visitor's persisted garage vehicle (make/model/
+ * generation slugs) to a QTY `fitment_id` from the search JSON's
+ * `vehicle_registry` (via the shared vehicleFitment resolver), reading both the
+ * garage selection and the registry off the injected GlobalStateManager. That
+ * `fitment_id` rides on EVERY getReviews / getQuestions call (omitted when
+ * un-resolvable or on a universal product — buildQuery drops null), so the
+ * envelopes return `fitment_review_count` / `fitment_question_count`. When that
+ * count is > 0 the module renders a "For your <vehicle>" filter chip naming the
+ * vehicle; clicking it refetches with `fitment_only=true` (composing with the
+ * active sort/rating/verified/media, resetting to page 1) and shows a selected
+ * state, and clearing it drops the flag. The honest default view stays
+ * newest-first — the chip is off by default. No chip when the count is 0 or on
+ * universal-product pages. A late-arriving registry or a garage change re-runs
+ * the resolution and refetches so the chip stays correct.
  *
  * Slice 6e (#8) adds the submission modal: review and question forms posted to
  * POST /api/reviews and POST /api/questions via ugcApi (SRS §3.2.4, §3.2.5). Each
@@ -85,6 +95,8 @@
  * alias-aware refetches stay consistent. Only the §3.2.1 public payload fields
  * are consumed — never `status` or other internal fields.
  */
+
+import { resolveGarageFitment } from '../../global/vehicleFitment';
 
 const MAX_STARS = 5;
 
@@ -140,7 +152,12 @@ const MESSAGES = {
     mediaVideoCount: 'You can attach up to 1 video.',
     mediaUploadError: 'A file failed to upload. Please remove it and try again.',
     mediaProcessing: 'Processing media… this can take up to 30 seconds for video.',
+    fitmentChipClear: 'Clear filter',
 };
+
+// "For your <vehicle>" fitment filter chip label (SRS §3.4.1). The vehicle name
+// is the resolver's label.
+const fitmentChipLabel = vehicle => `For your ${vehicle}`;
 
 export default class UgcProduct {
     /**
@@ -151,13 +168,21 @@ export default class UgcProduct {
      * @param {Function} [mediaPut] - fetch impl for the raw PUT to the DO Spaces
      *   presigned URL. Bypasses ugcApi's base entirely (the URL is absolute and
      *   external); injectable so tests never hit the network.
+     * @param {Object} [globalStateManager] - The site-wide GlobalStateManager
+     *   (getState/subscribe). Source of the persisted garage vehicle
+     *   (`vehicle.selected`) and the search-JSON `vehicle_registry`
+     *   (`search.data.vehicle_registry`) used to resolve the garage `fitment_id`
+     *   for the fitment filter (SRS §3.4.1). Omitted in tests with no garage —
+     *   the lists simply carry no `fitment_id` and no chip renders.
      */
-    constructor(archetypeId, stateManager, api, mediaPut) {
+    constructor(archetypeId, stateManager, api, mediaPut, globalStateManager) {
         this.archetypeId = archetypeId;
         this.stateManager = stateManager;
         this.api = api;
         this.mediaPut = mediaPut || ((...args) => fetch(...args));
+        this.globalStateManager = globalStateManager || null;
         this.unsubscribe = null;
+        this.unsubscribeGlobal = null;
 
         // Cached unfiltered aggregates from the reviews envelope. Constant under
         // filters, so the rating summary is painted once and never refetched
@@ -194,16 +219,22 @@ export default class UgcProduct {
         this.questionsLoaded = false;
 
         // The selected alias's integer index (SRS §3.1.4), or null when no
-        // alias is selected. Rides on submissions as alias_id regardless of
-        // the float toggle.
+        // alias is selected. Provenance only — rides on submissions as
+        // `alias_id` (the former sort_alias relevance sort was removed in M9).
         this.aliasIndex = null;
 
-        // "My vehicle first" toggle state, and the effective sort_alias param
-        // derived from it: aliasIndex while the toggle is on AND an alias is
-        // selected, else null. Floating is opt-in — automatic floating reads
-        // as misrepresenting the default order.
-        this.vehicleFirst = false;
-        this.sortAlias = null;
+        // Garage fitment (SRS §3.4.1, §3.2.1/§3.2.2). `fitmentId` is the QTY
+        // `fitment_id` resolved from the persisted garage vehicle against the
+        // search-JSON registry; it rides on every reviews/questions fetch.
+        // `fitmentLabel` names the vehicle on the chip. `fitmentOnly` is the
+        // chip's hard-filter flag — off by default, so the honest view is
+        // newest-first. The two `fitment*Count` values come from the envelopes
+        // and drive each chip's show-at->0 rule.
+        this.fitmentId = null;
+        this.fitmentLabel = null;
+        this.fitmentOnly = false;
+        this.fitmentReviewCount = 0;
+        this.fitmentQuestionCount = 0;
         this.reviewsLoaded = false;
 
         // The vehicle label of the currently selected alias, kept in sync from
@@ -232,6 +263,12 @@ export default class UgcProduct {
         this.questionsElement = document.querySelector('#product-questions');
         this.questionsToolbarElement = document.querySelector('[data-questions-toolbar]');
         this.questionsPaginationElement = document.querySelector('[data-questions-pagination]');
+
+        // "For your <vehicle>" fitment chip containers (SRS §3.4.1), one per
+        // list. Space is reserved in SCSS (visibility, not display) so the
+        // async chip paint never shifts the toolbar.
+        this.reviewsFitmentChipElement = document.querySelector('[data-reviews-fitment-chip]');
+        this.questionsFitmentChipElement = document.querySelector('[data-questions-fitment-chip]');
 
         // Review media display (issue #30, SRS §3.4.1): the overview panel
         // container and the shared lightbox. The gallery is its own data
@@ -282,11 +319,19 @@ export default class UgcProduct {
         this.onMediaTileClick = this.onMediaTileClick.bind(this);
         this.onLightboxClick = this.onLightboxClick.bind(this);
         this.onGalleryModalClick = this.onGalleryModalClick.bind(this);
+        this.onFitmentChipClick = this.onFitmentChipClick.bind(this);
 
         const hasReviewsDom = this.ratingElement || this.listElement;
 
         if (this.archetypeId && (hasReviewsDom || this.questionsElement)) {
             this.unsubscribe = this.stateManager.subscribe(this.update.bind(this));
+
+            // Resolve the garage fitment_id BEFORE the first fetch so it rides
+            // on the initial reviews/questions calls (SRS §3.4.1), and subscribe
+            // so a late-arriving registry or a garage change re-resolves and
+            // refetches.
+            this.subscribeGlobalFitment();
+
             this.bindControls();
             this.bindModals();
             this.captureVerifiedPurchaserToken();
@@ -316,6 +361,16 @@ export default class UgcProduct {
 
         if (this.questionsPaginationElement) {
             this.questionsPaginationElement.addEventListener('click', this.onQuestionsPaginationClick);
+        }
+
+        // Fitment chip clicks are delegated on the chip containers so the chip
+        // survives every re-render without rebinding (SRS §3.4.1).
+        if (this.reviewsFitmentChipElement) {
+            this.reviewsFitmentChipElement.addEventListener('click', this.onFitmentChipClick);
+        }
+
+        if (this.questionsFitmentChipElement) {
+            this.questionsFitmentChipElement.addEventListener('click', this.onFitmentChipClick);
         }
 
         // Media tile clicks are delegated so per-review strips and the grid
@@ -1025,7 +1080,8 @@ export default class UgcProduct {
             rating: this.query.rating,
             verified: this.query.verified,
             media: this.query.media,
-            sort_alias: this.sortAlias,
+            fitment_id: this.fitmentId,
+            fitment_only: this.fitmentOnly ? true : null,
         };
     }
 
@@ -1033,6 +1089,13 @@ export default class UgcProduct {
         this.total = Number.isFinite(data.total) ? data.total : 0;
         this.perPage = Number.isFinite(data.per_page) ? data.per_page : 0;
         this.query.page = Number.isFinite(data.page) ? data.page : this.query.page;
+
+        // Pre-filter match count for the garage fitment (SRS §3.2.1) — drives
+        // the reviews "For your <vehicle>" chip's show-at->0 rule.
+        this.fitmentReviewCount = Number.isFinite(data.fitment_review_count)
+            ? data.fitment_review_count
+            : 0;
+        this.renderFitmentChip('reviews');
 
         const items = Array.isArray(data.items) ? data.items : [];
         this.renderList(items);
@@ -1047,8 +1110,12 @@ export default class UgcProduct {
     }
 
     /**
-     * StateManager subscriber. Re-paints the cached summary so the block stays
-     * consistent across re-renders, then applies any alias-driven sort change.
+     * Local StateManager subscriber. Re-paints the cached summary so the block
+     * stays consistent across re-renders, refreshes the optional submission
+     * `vehicle_label`, and tracks the selected alias's `qty_alias_index` so it
+     * rides on submissions as `alias_id` (provenance; SRS §3.1.4). No fetch is
+     * triggered here — the fitment filter is driven by the GLOBAL garage state,
+     * not the locally-selected alias.
      * @param {Object} [state] - The local StateManager snapshot.
      */
     update(state) {
@@ -1057,7 +1124,7 @@ export default class UgcProduct {
         }
 
         this.vehicleLabel = this._resolveVehicleLabel(state);
-        this.applyAliasSort(state);
+        this.aliasIndex = this._resolveAliasIndex(state);
     }
 
     /**
@@ -1077,54 +1144,63 @@ export default class UgcProduct {
     }
 
     /**
-     * Reconcile the active `sort_alias` with the alias currently selected on the
-     * local StateManager (SRS §3.4.1). On a change — select, deselect, or switch
-     * between aliases — refetch BOTH the reviews and questions lists so
-     * alias-matching items float to the top within the current sort, preserving
-     * the active sort and filters and resetting only the page (the relevance
-     * order shifts). No-ops when the selection is unchanged, so unrelated state
-     * notifications never trigger a refetch.
-     * @param {Object} [state] - The local StateManager snapshot.
+     * Subscribe to the global garage state and resolve the garage vehicle to its
+     * QTY `fitment_id` (SRS §3.4.1). Reads the persisted garage selection
+     * (`vehicle.selected`) and the search-JSON `vehicle_registry`
+     * (`search.data.vehicle_registry`) off the GlobalStateManager and resolves
+     * via the shared vehicleFitment resolver. Runs once synchronously to seed
+     * the initial fetches, then on every global state change so a late-arriving
+     * registry or a garage swap re-resolves. Absent GlobalStateManager (tests
+     * with no garage) leaves `fitmentId` null — the lists carry no `fitment_id`
+     * and no chip renders.
      */
-    applyAliasSort(state) {
-        const nextAlias = this._resolveAliasIndex(state);
-        if (nextAlias === this.aliasIndex) {
+    subscribeGlobalFitment() {
+        if (!this.globalStateManager) {
             return;
         }
 
-        this.aliasIndex = nextAlias;
-        this._syncVehicleToggles();
-        this._applySortAlias();
+        this.resolveFitmentFromGlobal(this.globalStateManager.getState());
+        this.unsubscribeGlobal = this.globalStateManager.subscribe(
+            globalState => this.onGlobalFitmentChange(globalState),
+        );
     }
 
     /**
-     * The "My vehicle first" toggle changed (either toolbar). Both lists
-     * share the one preference.
-     * @param {boolean} checked
+     * Resolve and store the garage fitment from a global state snapshot, WITHOUT
+     * refetching. Used to seed state before the initial fetch.
+     * @param {Object} [globalState]
      */
-    _setVehicleFirst(checked) {
-        this.vehicleFirst = checked;
-        this._syncVehicleToggles();
-        this._applySortAlias();
+    resolveFitmentFromGlobal(globalState) {
+        const vehicle = globalState && globalState.vehicle ? globalState.vehicle.selected : null;
+        const registry = globalState && globalState.search && globalState.search.data
+            ? globalState.search.data.vehicle_registry
+            : null;
+
+        const resolved = resolveGarageFitment(registry, vehicle);
+        this.fitmentId = resolved ? resolved.fitment_id : null;
+        this.fitmentLabel = resolved ? resolved.label : null;
     }
 
     /**
-     * Re-derive the effective sort_alias (toggle on AND alias selected) and,
-     * when it changes, refetch both lists so alias-matching items float to
-     * the top within the current sort, preserving the active sort and filters
-     * and resetting only the page (the relevance order shifts).
+     * Global state changed. Re-resolve the garage fitment; if the resolved
+     * `fitment_id` changed (garage swap, or the registry arriving and resolving
+     * a previously-unresolvable selection), drop any active hard-filter and
+     * refetch both loaded lists from page 1 so the envelopes return fresh
+     * `fitment_*_count` values and the chip re-renders (SRS §3.4.1).
+     * @param {Object} [globalState]
      */
-    _applySortAlias() {
-        const effective = this.vehicleFirst && this.aliasIndex !== null ? this.aliasIndex : null;
-        if (effective === this.sortAlias) {
+    onGlobalFitmentChange(globalState) {
+        const previousId = this.fitmentId;
+        this.resolveFitmentFromGlobal(globalState);
+
+        if (this.fitmentId === previousId) {
             return;
         }
 
-        this.sortAlias = effective;
+        // The new vehicle's chip starts unselected — the honest default is the
+        // unfiltered newest-first view (SRS §3.4.1).
+        this.fitmentOnly = false;
 
-        // Only refetch a list that has completed its initial load, so the
-        // refetch layers on top of an established list rather than racing the
-        // in-flight init fetch (which reads sort_alias live anyway).
         if (this.reviewsLoaded) {
             this.query.page = 1;
             this.fetchReviews();
@@ -1137,26 +1213,85 @@ export default class UgcProduct {
     }
 
     /**
-     * Mirror the shared toggle state onto both toolbars' checkboxes: checked
-     * follows the preference, disabled while no alias is selected (the
-     * control is meaningless without a vehicle).
+     * Toggle the "For your <vehicle>" hard filter (SRS §3.4.1). A click on an
+     * inactive chip turns `fitment_only` on; a click on the clear control turns
+     * it off. Either way both loaded lists refetch from page 1, composing with
+     * the active sort/rating/verified/media. No-op when the chip isn't actually
+     * shown (no resolved fitment).
+     * @param {Event} event
      */
-    _syncVehicleToggles() {
-        const toggles = document.querySelectorAll(
-            '[data-reviews-control="vehicle_first"], [data-questions-control="vehicle_first"]',
-        );
-
-        for (let i = 0; i < toggles.length; i += 1) {
-            toggles[i].checked = this.vehicleFirst;
-            toggles[i].disabled = this.aliasIndex === null;
+    onFitmentChipClick(event) {
+        const trigger = event.target.closest('[data-fitment-chip-toggle], [data-fitment-chip-clear]');
+        if (!trigger || this.fitmentId === null) {
+            return;
         }
+
+        event.preventDefault();
+
+        const isClear = trigger.dataset.fitmentChipClear !== undefined;
+        const nextOnly = !isClear;
+        if (nextOnly === this.fitmentOnly) {
+            return;
+        }
+
+        this.fitmentOnly = nextOnly;
+        this.renderFitmentChip('reviews');
+        this.renderFitmentChip('questions');
+
+        if (this.reviewsLoaded) {
+            this.query.page = 1;
+            this.fetchReviews();
+        }
+
+        if (this.questionsLoaded) {
+            this.questionQuery.page = 1;
+            this.fetchQuestions();
+        }
+    }
+
+    /**
+     * Render (or hide) a list's fitment chip (SRS §3.4.1). Shows the
+     * "For your <vehicle>" chip only when the matching pre-filter count is > 0
+     * (which is also 0 on universal products / unresolved fitment). When the
+     * hard filter is active the chip carries a selected state plus a clear
+     * control. Space is reserved in SCSS, so toggling visibility never shifts
+     * the toolbar.
+     * @param {string} kind - 'reviews' | 'questions'.
+     */
+    renderFitmentChip(kind) {
+        const container = kind === 'questions'
+            ? this.questionsFitmentChipElement
+            : this.reviewsFitmentChipElement;
+        if (!container) {
+            return;
+        }
+
+        const count = kind === 'questions' ? this.fitmentQuestionCount : this.fitmentReviewCount;
+
+        if (!this.fitmentLabel || count <= 0) {
+            container.innerHTML = '';
+            container.style.visibility = 'hidden';
+            return;
+        }
+
+        const label = this._escape(fitmentChipLabel(this.fitmentLabel));
+        const active = this.fitmentOnly;
+        const activeClass = active ? ' is-active' : '';
+        const pressed = active ? 'true' : 'false';
+        const clear = active
+            ? `<button type="button" class="cs-fitment-chip-clear" data-fitment-chip-clear aria-label="${this._escapeAttr(MESSAGES.fitmentChipClear)}">&times;</button>`
+            : '';
+
+        container.innerHTML = `<button type="button" class="cs-fitment-chip${activeClass}" data-fitment-chip-toggle aria-pressed="${pressed}"><span class="cs-fitment-chip-label">${label}</span><span class="cs-fitment-chip-count">${count}</span></button>${clear}`;
+        container.style.visibility = 'visible';
     }
 
     /**
      * Pull the published alias index (SRS §3.1.4 `qty_alias_index`) off the
      * selected alias and normalize it to an integer, or null when no alias is
-     * selected / the field is absent or non-numeric. The value is passed
-     * verbatim as the API `sort_alias` param.
+     * selected / the field is absent or non-numeric. Retained as nullable
+     * provenance — it rides on submissions as `alias_id` (the former
+     * `sort_alias` relevance sort was removed in M9).
      * @param {Object} [state] - The local StateManager snapshot.
      * @returns {number|null}
      */
@@ -1192,11 +1327,6 @@ export default class UgcProduct {
             this.query.verified = target.checked ? true : null;
         } else if (reviewsControl === 'media') {
             this.query.media = target.checked ? true : null;
-        } else if (reviewsControl === 'vehicle_first') {
-            // Shared toggle — refetches both lists itself when the effective
-            // sort_alias changes.
-            this._setVehicleFirst(target.checked);
-            return;
         } else {
             return;
         }
@@ -1262,7 +1392,8 @@ export default class UgcProduct {
         return {
             page: this.questionQuery.page,
             sort: this.questionQuery.sort,
-            sort_alias: this.sortAlias,
+            fitment_id: this.fitmentId,
+            fitment_only: this.fitmentOnly ? true : null,
         };
     }
 
@@ -1271,6 +1402,13 @@ export default class UgcProduct {
         this.questionPerPage = Number.isFinite(data.per_page) ? data.per_page : 0;
         this.questionCount = this.questionTotal;
         this.questionQuery.page = Number.isFinite(data.page) ? data.page : this.questionQuery.page;
+
+        // Pre-filter match count for the garage fitment (SRS §3.2.2) — drives
+        // the Q&A "For your <vehicle>" chip's show-at->0 rule.
+        this.fitmentQuestionCount = Number.isFinite(data.fitment_question_count)
+            ? data.fitment_question_count
+            : 0;
+        this.renderFitmentChip('questions');
 
         this.renderQuestionsList(Array.isArray(data.items) ? data.items : []);
         this.renderQuestionsPagination();
@@ -1283,13 +1421,6 @@ export default class UgcProduct {
         }
 
         const { questionsControl } = target.dataset;
-
-        if (questionsControl === 'vehicle_first') {
-            // Shared toggle — refetches both lists itself when the effective
-            // sort_alias changes.
-            this._setVehicleFirst(target.checked);
-            return;
-        }
 
         if (questionsControl !== 'sort') {
             return;
@@ -2051,6 +2182,7 @@ export default class UgcProduct {
 
     destroy() {
         if (this.unsubscribe) this.unsubscribe();
+        if (this.unsubscribeGlobal) this.unsubscribeGlobal();
 
         if (this.gridResizeObserver) {
             this.gridResizeObserver.disconnect();
@@ -2070,6 +2202,14 @@ export default class UgcProduct {
 
         if (this.questionsPaginationElement) {
             this.questionsPaginationElement.removeEventListener('click', this.onQuestionsPaginationClick);
+        }
+
+        if (this.reviewsFitmentChipElement) {
+            this.reviewsFitmentChipElement.removeEventListener('click', this.onFitmentChipClick);
+        }
+
+        if (this.questionsFitmentChipElement) {
+            this.questionsFitmentChipElement.removeEventListener('click', this.onFitmentChipClick);
         }
 
         if (this.listElement) {

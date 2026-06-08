@@ -830,6 +830,66 @@ $cs-button-height: 50px;
   font-weight: 600;
 }
 
+// "For your <vehicle>" fitment filter chip (SRS §3.4.1). The slot reserves the
+// chip's row height even when empty so the async paint never shifts the
+// toolbar (CLS); ugcProduct.js flips visibility, never display. Shared by the
+// reviews and Q&A toolbars.
+.cs-fitment-chip-slot {
+  display: flex;
+  align-items: center;
+  gap: spacing('quarter');
+  min-height: 44px;
+  visibility: hidden;
+}
+
+.cs-fitment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: spacing('half');
+  min-height: 36px;
+  padding: 0 spacing('half');
+  border: 1px solid stencilColor('color-textSecondary');
+  border-radius: 999px;
+  background: transparent;
+  color: stencilColor('color-textBase');
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &.is-active {
+    border-color: stencilColor('color-primary');
+    background: stencilColor('color-primary');
+    color: stencilColor('color-textInverse');
+  }
+}
+
+.cs-fitment-chip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  font-size: 0.75rem;
+}
+
+.cs-fitment-chip-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: stencilColor('color-textSecondary');
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
 // Visuals come from the shared .cs-form-select class (the add-to-cart option
 // dropdowns) on the same element — identical by construction.
 
