@@ -1151,7 +1151,7 @@ describe('UgcProduct (slice 6e — submission modal)', () => {
                             <input type="text" name="title" data-review-field="title">
                             <textarea name="body" data-review-field="body"></textarea>
                             <input type="text" name="author" data-review-field="author">
-                            <input type="text" name="vehicle_label" data-review-field="vehicle_label">
+                            <div class="cs-ugc-vehicle" data-review-vehicle></div>
                             <label class="cs-ugc-honeypot"><input type="text" name="website" data-review-field="website"></label>
                             <div data-review-turnstile data-ugc-turnstile-sitekey=""></div>
                             <input type="hidden" name="cf_turnstile_token" data-review-field="cf_turnstile_token">
@@ -1178,7 +1178,7 @@ describe('UgcProduct (slice 6e — submission modal)', () => {
                         <div data-question-fields>
                             <textarea name="body" data-question-field="body"></textarea>
                             <input type="text" name="author" data-question-field="author">
-                            <input type="text" name="vehicle_label" data-question-field="vehicle_label">
+                            <div class="cs-ugc-vehicle" data-question-vehicle></div>
                             <label class="cs-ugc-honeypot"><input type="text" name="website" data-question-field="website"></label>
                             <div data-question-turnstile data-ugc-turnstile-sitekey=""></div>
                             <input type="hidden" name="cf_turnstile_token" data-question-field="cf_turnstile_token">
@@ -1202,7 +1202,6 @@ describe('UgcProduct (slice 6e — submission modal)', () => {
             title: 'Great product',
             body: 'Really happy with this.',
             author: 'Jane D.',
-            vehicle_label: '',
             website: '',
             cf_turnstile_token: '0.test-token',
             ...overrides,
@@ -1214,7 +1213,6 @@ describe('UgcProduct (slice 6e — submission modal)', () => {
         const values = {
             body: 'Does this fit the F56?',
             author: 'Jane D.',
-            vehicle_label: '',
             website: '',
             cf_turnstile_token: '0.test-token',
             ...overrides,
@@ -1262,10 +1260,13 @@ describe('UgcProduct (slice 6e — submission modal)', () => {
             await flush();
 
             document.querySelector('[data-review-modal-open]').click();
-            fillReview({ vehicle_label: 'MINI Cooper F56' });
+            fillReview();
             submitForm('review');
             await flush();
 
+            // No archetype fitments / no garage here, so the structured vehicle
+            // section is empty — neither fitment_id nor vehicle_label is sent
+            // (SRS §3.4.1, Slice B). There is no free-text vehicle field.
             expect(api.postReview).toHaveBeenCalledWith({
                 archetype_id: ARCHETYPE_ID,
                 author: 'Jane D.',
@@ -1274,7 +1275,6 @@ describe('UgcProduct (slice 6e — submission modal)', () => {
                 body: 'Really happy with this.',
                 cf_turnstile_token: '0.test-token',
                 website: '',
-                vehicle_label: 'MINI Cooper F56',
             });
         });
 
@@ -1313,7 +1313,11 @@ describe('UgcProduct (slice 6e — submission modal)', () => {
             expect(api.postReview.mock.calls[0][0].alias_id).toBe(4821);
         });
 
-        it('pre-fills vehicle_label from the selected alias and submits it', async () => {
+        // Slice B (#158): the vehicle is no longer free-text nor alias-derived.
+        // With no archetype fitments and no garage, the structured section is
+        // empty, so submission carries no fitment_id / vehicle_label — and there
+        // is no [name="vehicle_label"] input in the DOM at all.
+        it('renders no free-text vehicle input and sends no vehicle on an empty section', async () => {
             const stateManager = buildStateManager();
             const api = buildSubmitApi();
             new UgcProduct(ARCHETYPE_ID, stateManager, api);
@@ -1323,14 +1327,16 @@ describe('UgcProduct (slice 6e — submission modal)', () => {
             await flush();
 
             document.querySelector('[data-review-modal-open]').click();
-            expect(document.querySelector('[data-review-form] [name="vehicle_label"]').value)
-                .toBe('MINI Cooper F56');
+            expect(document.querySelector('[data-review-form] [name="vehicle_label"]')).toBeNull();
+            expect(document.querySelector('[data-review-vehicle]').innerHTML).toBe('');
 
-            fillReview({ vehicle_label: 'MINI Cooper F56' });
+            fillReview();
             submitForm('review');
             await flush();
 
-            expect(api.postReview.mock.calls[0][0].vehicle_label).toBe('MINI Cooper F56');
+            const payload = api.postReview.mock.calls[0][0];
+            expect(payload).not.toHaveProperty('fitment_id');
+            expect(payload).not.toHaveProperty('vehicle_label');
         });
     });
 
@@ -1461,6 +1467,309 @@ describe('UgcProduct (slice 6e — submission modal)', () => {
         document.querySelector('[data-review-modal-open]').click();
         // Listener removed → modal stays hidden.
         expect(document.querySelector('[data-review-modal]').hidden).toBe(true);
+    });
+});
+
+describe('UgcProduct (slice B — structured-vehicle submission, SRS §3.4.1)', () => {
+    // Archetype JSON with two fitments (F56 + R53), object generation nodes per
+    // Pass 27. make_model_index keys model/generation maps with the make-slug
+    // prefix (mini); buildArchetypeFitmentList strips it back to bare slugs.
+    const ARCHETYPE_DATA = {
+        make_model_index: {
+            mini: {
+                name: 'MINI',
+                models: {
+                    minicooper: {
+                        name: 'Cooper',
+                        generations: {
+                            minif56: { name: 'F56', fitment_id: 87 },
+                            minir53: { name: 'R53', fitment_id: 42 },
+                        },
+                    },
+                },
+            },
+        },
+    };
+
+    const UNIVERSAL_DATA = { universal_product: true };
+
+    const buildSubmitApi = (validateResult = null) => ({
+        getReviews: jest.fn(() => Promise.resolve({ ok: true, status: 200, data: buildEnvelope() })),
+        getQuestions: jest.fn(() => Promise.resolve({
+            ok: true, status: 200, data: { items: [], total: 0, page: 1, per_page: 10 },
+        })),
+        validateToken: jest.fn(() => Promise.resolve(
+            validateResult || { ok: true, status: 200, data: { archetype_id: ARCHETYPE_ID, alias_id: 4821, fitment_id: 87 } },
+        )),
+        postReview: jest.fn(() => Promise.resolve({ ok: true, status: 201, data: { id: 1 } })),
+        postQuestion: jest.fn(() => Promise.resolve({ ok: true, status: 201, data: { id: 1 } })),
+    });
+
+    const mountScaffoldB = () => {
+        document.body.innerHTML = `
+            <a id="product-rating" data-product-rating></a>
+            <div data-reviews-toolbar>
+                <button type="button" data-review-modal-open>Write a Review</button>
+            </div>
+            <div id="product-reviews"></div>
+            <div data-reviews-pagination></div>
+
+            <div class="cs-ugc-modal" data-review-modal hidden>
+                <div class="cs-ugc-modal-dialog">
+                    <form data-review-form novalidate>
+                        <p data-review-error hidden></p>
+                        <p data-review-success hidden>Thanks!</p>
+                        <div data-review-fields>
+                            <select name="rating" data-review-field="rating"><option value="">—</option><option value="5">5</option></select>
+                            <input type="text" name="title" data-review-field="title">
+                            <textarea name="body" data-review-field="body"></textarea>
+                            <input type="text" name="author" data-review-field="author">
+                            <div class="cs-ugc-vehicle" data-review-vehicle></div>
+                            <label class="cs-ugc-honeypot"><input type="text" name="website" data-review-field="website"></label>
+                            <input type="hidden" name="cf_turnstile_token" data-review-field="cf_turnstile_token">
+                            <button type="submit" data-review-submit>Submit Review</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div data-questions-toolbar>
+                <button type="button" data-question-modal-open>Ask a Question</button>
+            </div>
+            <div id="product-questions"></div>
+            <div data-questions-pagination></div>
+
+            <div class="cs-ugc-modal" data-question-modal hidden>
+                <div class="cs-ugc-modal-dialog">
+                    <form data-question-form novalidate>
+                        <p data-question-error hidden></p>
+                        <p data-question-success hidden>Thanks!</p>
+                        <div data-question-fields>
+                            <textarea name="body" data-question-field="body"></textarea>
+                            <input type="text" name="author" data-question-field="author">
+                            <div class="cs-ugc-vehicle" data-question-vehicle></div>
+                            <label class="cs-ugc-honeypot"><input type="text" name="website" data-question-field="website"></label>
+                            <input type="hidden" name="cf_turnstile_token" data-question-field="cf_turnstile_token">
+                            <button type="submit" data-question-submit>Submit Question</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+    };
+
+    const fillReview = (scope = 'review', overrides = {}) => {
+        const base = scope === 'review'
+            ? { rating: '5', title: 'Great', body: 'Happy.', author: 'Jane D.', website: '', cf_turnstile_token: '0.t' }
+            : { body: 'Fit F56?', author: 'Jane D.', website: '', cf_turnstile_token: '0.t' };
+        const values = { ...base, ...overrides };
+        Object.keys(values).forEach((name) => {
+            const el = document.querySelector(`[data-${scope}-form] [name="${name}"]`);
+            if (el) el.value = values[name];
+        });
+    };
+
+    const submitForm = (scope) => {
+        document.querySelector(`[data-${scope}-form]`).dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true }),
+        );
+    };
+
+    beforeEach(() => {
+        mountScaffoldB();
+        window.history.replaceState({}, '', '/');
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+        window.history.replaceState({}, '', '/');
+    });
+
+    describe('non-verified dropdown (review + Q&A)', () => {
+        it('renders an archetype-constrained make/model/generation dropdown, append off by default', async () => {
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildSubmitApi(), undefined, undefined, ARCHETYPE_DATA);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+
+            const select = document.querySelector('[data-review-vehicle] [data-vehicle-select]');
+            expect(select).not.toBeNull();
+            const optionLabels = Array.from(select.options).map(o => o.textContent);
+            expect(optionLabels).toContain('MINI Cooper F56');
+            expect(optionLabels).toContain('MINI Cooper R53');
+
+            const append = document.querySelector('[data-review-vehicle] [data-vehicle-append]');
+            expect(append.checked).toBe(false);
+        });
+
+        it('sends the chosen fitment_id + resolved vehicle_label only when append is on', async () => {
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, undefined, ARCHETYPE_DATA);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            const select = document.querySelector('[data-review-vehicle] [data-vehicle-select]');
+            select.value = '87';
+            document.querySelector('[data-review-vehicle] [data-vehicle-append]').checked = true;
+
+            fillReview('review');
+            submitForm('review');
+            await flush();
+
+            const payload = api.postReview.mock.calls[0][0];
+            expect(payload.fitment_id).toBe(87);
+            expect(payload.vehicle_label).toBe('MINI Cooper F56');
+        });
+
+        it('omits the vehicle entirely when append is left off', async () => {
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, undefined, ARCHETYPE_DATA);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            const select = document.querySelector('[data-review-vehicle] [data-vehicle-select]');
+            select.value = '87';
+            // Append checkbox left unchecked.
+
+            fillReview('review');
+            submitForm('review');
+            await flush();
+
+            const payload = api.postReview.mock.calls[0][0];
+            expect(payload).not.toHaveProperty('fitment_id');
+            expect(payload).not.toHaveProperty('vehicle_label');
+        });
+
+        it('pre-selects the garage vehicle and turns append on when it is an archetype fitment', async () => {
+            // Garage slugs are the bare (make-prefix-stripped) model/generation
+            // slugs buildArchetypeFitmentList emits — cooper / f56.
+            const global = buildGlobalStateManager({ vehicle: { make: 'mini', model: 'cooper', generation: 'f56' } });
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global, ARCHETYPE_DATA);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+
+            const select = document.querySelector('[data-review-vehicle] [data-vehicle-select]');
+            expect(select.value).toBe('87');
+            expect(document.querySelector('[data-review-vehicle] [data-vehicle-append]').checked).toBe(true);
+        });
+
+        it('does not pre-select when the garage vehicle is not one of the archetype fitments', async () => {
+            const global = buildGlobalStateManager({ vehicle: { make: 'honda', model: 'civic', generation: 'eg' } });
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildSubmitApi(), undefined, global, ARCHETYPE_DATA);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+
+            expect(document.querySelector('[data-review-vehicle] [data-vehicle-select]').value).toBe('');
+            expect(document.querySelector('[data-review-vehicle] [data-vehicle-append]').checked).toBe(false);
+        });
+
+        it('drives the Q&A modal with the same archetype-constrained dropdown', async () => {
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, undefined, ARCHETYPE_DATA);
+            await flush();
+
+            document.querySelector('[data-question-modal-open]').click();
+            const select = document.querySelector('[data-question-vehicle] [data-vehicle-select]');
+            select.value = '42';
+            document.querySelector('[data-question-vehicle] [data-vehicle-append]').checked = true;
+
+            fillReview('question');
+            submitForm('question');
+            await flush();
+
+            const payload = api.postQuestion.mock.calls[0][0];
+            expect(payload.fitment_id).toBe(42);
+            expect(payload.vehicle_label).toBe('MINI Cooper R53');
+        });
+    });
+
+    describe('verified reviewer (token fitment)', () => {
+        it('shows a pre-checked "Add your <vehicle>" option, append on by default', async () => {
+            const global = buildGlobalStateManager({ registry: F56_REGISTRY });
+            window.history.replaceState({}, '', '/products/x?ugc_token=abc123');
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildSubmitApi(), undefined, global, ARCHETYPE_DATA);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+
+            const append = document.querySelector('[data-review-vehicle] [data-vehicle-append]');
+            expect(append).not.toBeNull();
+            expect(append.checked).toBe(true);
+            // No dropdown on the verified path.
+            expect(document.querySelector('[data-review-vehicle] [data-vehicle-select]')).toBeNull();
+            expect(document.querySelector('[data-review-vehicle]').textContent).toContain('Add your MINI Cooper F56');
+        });
+
+        it('sends the token fitment_id + label when the pre-checked option stays on', async () => {
+            const global = buildGlobalStateManager({ registry: F56_REGISTRY });
+            window.history.replaceState({}, '', '/products/x?ugc_token=abc123');
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global, ARCHETYPE_DATA);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview('review');
+            submitForm('review');
+            await flush();
+
+            const payload = api.postReview.mock.calls[0][0];
+            expect(payload.fitment_id).toBe(87);
+            expect(payload.vehicle_label).toBe('MINI Cooper F56');
+            expect(payload.ugc_token).toBe('abc123');
+        });
+
+        it('omits the vehicle when the verified reviewer unchecks the option', async () => {
+            const global = buildGlobalStateManager({ registry: F56_REGISTRY });
+            window.history.replaceState({}, '', '/products/x?ugc_token=abc123');
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global, ARCHETYPE_DATA);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            document.querySelector('[data-review-vehicle] [data-vehicle-append]').checked = false;
+
+            fillReview('review');
+            submitForm('review');
+            await flush();
+
+            const payload = api.postReview.mock.calls[0][0];
+            expect(payload).not.toHaveProperty('fitment_id');
+            expect(payload).not.toHaveProperty('vehicle_label');
+        });
+
+        it('falls back to the dropdown when the token carries no fitment_id', async () => {
+            const validateResult = { ok: true, status: 200, data: { archetype_id: ARCHETYPE_ID, alias_id: 4821, fitment_id: null } };
+            window.history.replaceState({}, '', '/products/x?ugc_token=abc123');
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildSubmitApi(validateResult), undefined, undefined, ARCHETYPE_DATA);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            // No token fitment → the non-verified dropdown path renders instead.
+            expect(document.querySelector('[data-review-vehicle] [data-vehicle-select]')).not.toBeNull();
+        });
+    });
+
+    describe('universal products', () => {
+        it('renders no vehicle section and submits with no fitment', async () => {
+            const api = buildSubmitApi();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, undefined, UNIVERSAL_DATA);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            expect(document.querySelector('[data-review-vehicle]').innerHTML).toBe('');
+            expect(document.querySelector('[data-review-vehicle] [data-vehicle-select]')).toBeNull();
+
+            fillReview('review');
+            submitForm('review');
+            await flush();
+
+            const payload = api.postReview.mock.calls[0][0];
+            expect(payload).not.toHaveProperty('fitment_id');
+            expect(payload).not.toHaveProperty('vehicle_label');
+        });
     });
 });
 

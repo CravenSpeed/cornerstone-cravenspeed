@@ -82,6 +82,25 @@
  * reviews-only — questions carry none. The confirm call can take 10-30s for video,
  * so a "Processing…" state is surfaced (CLS-safe) while it runs.
  *
+ * M9 Slice B (#158) replaces the free-text vehicle input in the submission
+ * modals with a STRUCTURED vehicle picker (SRS §3.4.1, §3.2.4, §3.2.5). There is
+ * no typed vehicle field anywhere — reviews or Q&A. The modal captures a
+ * `fitment_id` (QTY's vehicle identity) and the storefront resolves its display
+ * `vehicle_label` from the object generation nodes, never a typed string:
+ *   - VERIFIED reviewer (GET /api/token/validate returned a `fitment_id`,
+ *     §3.2.8): a pre-checked "Add your <vehicle>" option, append ON by default.
+ *     The label comes from fitmentIdToLabel(registry, tokenFitmentId).
+ *   - NON-VERIFIED reviewer + ALL Q&A: a make/model/generation dropdown
+ *     constrained to the archetype's own fitments via
+ *     buildArchetypeFitmentList(archetypeData), pre-filled with the garage
+ *     vehicle when it is one of them (matched on make/model/generation slug),
+ *     append OFF by default.
+ * On submit the chosen `fitment_id` + resolved `vehicle_label` ride on the
+ * payload when the user opts to append a vehicle; when they opt out, neither is
+ * sent (the API treats an absent `fitment_id` as "no vehicle", §3.2.4/§3.2.5).
+ * Universal products carry no archetype fitment tree, so the structured dropdown
+ * is empty and the vehicle section is absent — universal submission is unbroken.
+ *
  * Slice #30 adds review media DISPLAY (SRS §3.4.1, §3.2.1): a top-level photo
  * thumbnail grid between the rating summary and the review/question tabs,
  * sourced from the media of the fetched reviews, plus a per-review thumbnail
@@ -96,7 +115,11 @@
  * are consumed — never `status` or other internal fields.
  */
 
-import { resolveGarageFitment } from '../../global/vehicleFitment';
+import {
+    resolveGarageFitment,
+    fitmentIdToLabel,
+    buildArchetypeFitmentList,
+} from '../../global/vehicleFitment';
 
 const MAX_STARS = 5;
 
@@ -153,7 +176,13 @@ const MESSAGES = {
     mediaUploadError: 'A file failed to upload. Please remove it and try again.',
     mediaProcessing: 'Processing media… this can take up to 30 seconds for video.',
     fitmentChipClear: 'Clear filter',
+    vehicleSectionLabel: 'Vehicle',
+    vehicleSelectDefault: 'Select a vehicle…',
 };
+
+// "Add your <vehicle>" verified-reviewer append label (SRS §3.4.1). The vehicle
+// name is the token fitment's resolved registry label.
+const addVehicleLabel = vehicle => `Add your ${vehicle}`;
 
 // "For your <vehicle>" fitment filter chip label (SRS §3.4.1). The vehicle name
 // is the resolver's label.
@@ -174,8 +203,12 @@ export default class UgcProduct {
      *   (`search.data.vehicle_registry`) used to resolve the garage `fitment_id`
      *   for the fitment filter (SRS §3.4.1). Omitted in tests with no garage —
      *   the lists simply carry no `fitment_id` and no chip renders.
+     * @param {Object} [archetypeData] - The loaded archetype JSON. Source of the
+     *   archetype-constrained make/model/generation fitment list for the
+     *   non-verified submission dropdown (SRS §3.4.1, via buildArchetypeFitmentList).
+     *   Universal products yield an empty list, so the vehicle section is absent.
      */
-    constructor(archetypeId, stateManager, api, mediaPut, globalStateManager) {
+    constructor(archetypeId, stateManager, api, mediaPut, globalStateManager, archetypeData) {
         this.archetypeId = archetypeId;
         this.stateManager = stateManager;
         this.api = api;
@@ -183,6 +216,11 @@ export default class UgcProduct {
         this.globalStateManager = globalStateManager || null;
         this.unsubscribe = null;
         this.unsubscribeGlobal = null;
+
+        // Archetype-constrained fitment list for the structured submission
+        // dropdown (SRS §3.4.1, Slice B). Empty on universal products / when no
+        // archetype data is injected — the vehicle section is then absent.
+        this.archetypeFitments = buildArchetypeFitmentList(archetypeData || null);
 
         // Cached unfiltered aggregates from the reviews envelope. Constant under
         // filters, so the rating summary is painted once and never refetched
@@ -237,10 +275,15 @@ export default class UgcProduct {
         this.fitmentQuestionCount = 0;
         this.reviewsLoaded = false;
 
-        // The vehicle label of the currently selected alias, kept in sync from
-        // StateManager so a submission can default `vehicle_label` to it (SRS
-        // §3.2.4, §3.2.5 — both optional). Null when no alias is selected.
-        this.vehicleLabel = null;
+        // Init-race guard (Slice A review nit): a garage/registry change can fire
+        // between seeding the fitment and the initial fetch completing, while
+        // `reviewsLoaded`/`questionsLoaded` are still false. The change updates
+        // `fitmentId` but its refetch is dropped by the loaded guards, leaving the
+        // in-flight init fetch (whose params were already captured) stale. This
+        // flag records that a deferred refetch is owed; init runs it once the list
+        // has loaded so the chip/list reflect the latest fitment.
+        this.pendingReviewsFitmentRefetch = false;
+        this.pendingQuestionsFitmentRefetch = false;
 
         // Verified-purchaser token (SRS §3.4.1, §3.2.8). Held in memory for the
         // session only once GET /api/token/validate confirms it; sent as
@@ -248,6 +291,12 @@ export default class UgcProduct {
         // Stays null on absent/invalid/expired token — submission still proceeds,
         // just unverified.
         this.verifiedPurchaserToken = null;
+
+        // The token's authoritative `fitment_id` (SRS §3.2.8), held alongside the
+        // token once validated. Drives the verified reviewer's pre-checked
+        // "Add your <vehicle>" option in the review modal (append on by default,
+        // SRS §3.4.1). Null until a valid token carries a fitment.
+        this.verifiedFitmentId = null;
 
         // Turnstile widget ids returned by window.turnstile.render, per modal.
         // Tracked so the widget is rendered once and reset after each submit.
@@ -305,6 +354,17 @@ export default class UgcProduct {
         this.reviewFormElement = document.querySelector('[data-review-form]');
         this.questionModalElement = document.querySelector('[data-question-modal]');
         this.questionFormElement = document.querySelector('[data-question-form]');
+
+        // Structured-vehicle section containers (SRS §3.4.1, Slice B), one per
+        // modal. Populated on open by _renderVehicleSection — the verified
+        // pre-checked option or the archetype-constrained dropdown. Reserved in
+        // SCSS so the async paint never shifts the form.
+        this.reviewVehicleElement = this.reviewFormElement
+            ? this.reviewFormElement.querySelector('[data-review-vehicle]')
+            : null;
+        this.questionVehicleElement = this.questionFormElement
+            ? this.questionFormElement.querySelector('[data-question-vehicle]')
+            : null;
 
         this.onToolbarChange = this.onToolbarChange.bind(this);
         this.onPaginationClick = this.onPaginationClick.bind(this);
@@ -459,7 +519,7 @@ export default class UgcProduct {
         this._setError(modal, '');
         this._setSuccess(modal, false);
         this._setFieldsHidden(modal, false);
-        this._prefillVehicle(form);
+        this._renderVehicleSection(modal === this.reviewModalElement ? 'review' : 'question');
 
         if (modal === this.reviewModalElement) {
             this.confirmedMedia = [];
@@ -476,19 +536,175 @@ export default class UgcProduct {
     }
 
     /**
-     * Default the optional vehicle_label input to the selected alias's vehicle
-     * label, when present (SRS §3.2.4, §3.2.5). The user can still edit or clear it.
-     * @param {HTMLFormElement} form
+     * Read the search-JSON `vehicle_registry` off the GlobalStateManager, used to
+     * resolve a `fitment_id` (e.g. the verified token's) to its display label
+     * (SRS §3.4.1). Null when no GlobalStateManager / registry is available.
+     * @returns {Object|null}
      */
-    _prefillVehicle(form) {
-        if (!form || !this.vehicleLabel) {
+    _registry() {
+        if (!this.globalStateManager) {
+            return null;
+        }
+
+        const state = this.globalStateManager.getState();
+        return state && state.search && state.search.data
+            ? state.search.data.vehicle_registry
+            : null;
+    }
+
+    /**
+     * Paint the structured vehicle section for a submission modal (SRS §3.4.1,
+     * Slice B). There is no free-text vehicle input. The shape depends on the
+     * trust tier and product:
+     *   - VERIFIED review (a token `fitment_id` is held): a pre-checked
+     *     "Add your <vehicle>" checkbox, append ON by default; the vehicle is the
+     *     token's fitment, labelled from the registry.
+     *   - NON-VERIFIED review + ALL Q&A: an append checkbox (OFF by default) plus
+     *     a make/model/generation <select> constrained to the archetype's own
+     *     fitments, pre-selecting the garage vehicle when it is one of them.
+     * Universal products (empty archetype fitment list) and the no-registry case
+     * leave the section empty so universal submission is unbroken.
+     * @param {string} kind - 'review' | 'question'.
+     */
+    _renderVehicleSection(kind) {
+        const container = kind === 'review' ? this.reviewVehicleElement : this.questionVehicleElement;
+        if (!container) {
             return;
         }
 
-        const input = form.querySelector('[name="vehicle_label"]');
-        if (input) {
-            input.value = this.vehicleLabel;
+        if (kind === 'review' && this.verifiedFitmentId !== null) {
+            const label = fitmentIdToLabel(this._registry(), this.verifiedFitmentId);
+            if (label) {
+                container.innerHTML = this._buildVerifiedVehicle(label);
+                return;
+            }
         }
+
+        container.innerHTML = this._buildVehicleDropdown();
+    }
+
+    /**
+     * Build the verified reviewer's pre-checked "Add your <vehicle>" option
+     * (SRS §3.4.1 / §3.2.8). Append defaults ON. The fitment_id rides on the
+     * append checkbox's dataset so submission can read it without a registry
+     * round-trip; on submit the server overrides it from the token anyway (§3.2.4).
+     * @param {string} label
+     * @returns {string}
+     */
+    _buildVerifiedVehicle(label) {
+        const text = this._escape(addVehicleLabel(label));
+        const fitmentAttr = this._escapeAttr(String(this.verifiedFitmentId));
+        const labelAttr = this._escapeAttr(label);
+        return `<label class="cs-ugc-field cs-ugc-vehicle-append">
+                    <input type="checkbox" data-vehicle-append data-vehicle-fitment-id="${fitmentAttr}" data-vehicle-label="${labelAttr}" checked>
+                    <span class="cs-ugc-field-label">${text}</span>
+                </label>`;
+    }
+
+    /**
+     * Build the non-verified make/model/generation dropdown constrained to the
+     * archetype's own fitments (SRS §3.4.1), plus the append checkbox (OFF by
+     * default). Each option carries its `fitment_id` and resolved label so submit
+     * reads them straight off the selected option. Empty string when the archetype
+     * has no fitments (universal product) — the vehicle section is then absent.
+     * The garage vehicle is pre-selected when it matches one of the options.
+     * @returns {string}
+     */
+    _buildVehicleDropdown() {
+        if (!this.archetypeFitments.length) {
+            return '';
+        }
+
+        const selectedSlug = this._garageFitmentSlug();
+        const options = this.archetypeFitments.map((fitment) => {
+            const value = fitment.fitment_id === null ? '' : String(fitment.fitment_id);
+            const slug = `${fitment.make}|${fitment.model}|${fitment.generation}`;
+            const selected = slug === selectedSlug ? ' selected' : '';
+            // Both the option's visible text and the submitted vehicle_label are
+            // the full make/model/generation label (SRS §3.4.1) — the same display
+            // label fitmentIdToLabel resolves on the verified path, e.g.
+            // "MINI Cooper F56".
+            return `<option value="${this._escapeAttr(value)}" data-vehicle-label="${this._escapeAttr(fitment.label)}"${selected}>${this._escape(fitment.label)}</option>`;
+        });
+
+        const appendChecked = selectedSlug ? ' checked' : '';
+        const appendLabel = this._escape(MESSAGES.vehicleSectionLabel);
+        const defaultOption = this._escape(MESSAGES.vehicleSelectDefault);
+
+        return `<div class="cs-ugc-field cs-ugc-vehicle-picker">
+                    <label class="cs-ugc-vehicle-append-row">
+                        <input type="checkbox" data-vehicle-append${appendChecked}>
+                        <span class="cs-ugc-field-label">${appendLabel}</span>
+                    </label>
+                    <select class="cs-ugc-input cs-ugc-vehicle-select" data-vehicle-select>
+                        <option value="">${defaultOption}</option>
+                        ${options.join('')}
+                    </select>
+                </div>`;
+    }
+
+    /**
+     * Resolve the visitor's garage selection to its `make|model|generation` slug
+     * key, matched against the archetype fitment options to pre-select the
+     * dropdown (SRS §3.4.1). Null when there is no garage vehicle or it is not one
+     * of the archetype's fitments.
+     * @returns {string|null}
+     */
+    _garageFitmentSlug() {
+        if (!this.globalStateManager) {
+            return null;
+        }
+
+        const state = this.globalStateManager.getState();
+        const vehicle = state && state.vehicle ? state.vehicle.selected : null;
+        if (!vehicle || !vehicle.make || !vehicle.model || !vehicle.generation) {
+            return null;
+        }
+
+        const slug = `${vehicle.make}|${vehicle.model}|${vehicle.generation}`;
+        const match = this.archetypeFitments.some(
+            fitment => `${fitment.make}|${fitment.model}|${fitment.generation}` === slug,
+        );
+        return match ? slug : null;
+    }
+
+    /**
+     * Read the chosen structured vehicle off a submission modal (SRS §3.4.1,
+     * Slice B). Returns { fitment_id, vehicle_label } when the user opts to append
+     * a vehicle and one is resolvable, or null when they opt out / none is chosen.
+     * The verified review path reads the pre-checked option's dataset; the
+     * dropdown path reads the selected <option>. A non-positive / unparseable
+     * fitment_id resolves to null (un-filterable garage entry, never appended).
+     * @param {string} kind - 'review' | 'question'.
+     * @returns {{fitment_id: number, vehicle_label: string}|null}
+     */
+    _readVehicleSelection(kind) {
+        const container = kind === 'review' ? this.reviewVehicleElement : this.questionVehicleElement;
+        if (!container) {
+            return null;
+        }
+
+        const append = container.querySelector('[data-vehicle-append]');
+        if (!append || !append.checked) {
+            return null;
+        }
+
+        let value = append.dataset.vehicleFitmentId;
+        let label = append.dataset.vehicleLabel;
+
+        const select = container.querySelector('[data-vehicle-select]');
+        if (select) {
+            const option = select.options[select.selectedIndex];
+            value = select.value;
+            label = option ? option.dataset.vehicleLabel : '';
+        }
+
+        const fitmentId = parseInt(value, 10);
+        if (Number.isNaN(fitmentId) || fitmentId <= 0) {
+            return null;
+        }
+
+        return { fitment_id: fitmentId, vehicle_label: label || '' };
     }
 
     /**
@@ -750,6 +966,16 @@ export default class UgcProduct {
         const result = await this.api.validateToken(token);
         if (result.ok) {
             this.verifiedPurchaserToken = token;
+
+            // The token's authoritative fitment (SRS §3.2.8) drives the verified
+            // reviewer's pre-checked "Add your <vehicle>" option (§3.4.1). null
+            // when the purchased alias had no resolvable fitment — then the
+            // verified reviewer falls through to the dropdown path.
+            const data = result.data || {};
+            const fitmentId = parseInt(data.fitment_id, 10);
+            this.verifiedFitmentId = (!Number.isNaN(fitmentId) && fitmentId > 0)
+                ? fitmentId
+                : null;
         }
     }
 
@@ -768,13 +994,16 @@ export default class UgcProduct {
 
     /**
      * Shape the review submission body to the frozen SRS §3.2.4 contract. Optional
-     * fields (`alias_id`, `vehicle_label`, `ugc_token`) are included only when
-     * present so the API receives a clean body; the honeypot `website` and
-     * `cf_turnstile_token` are always sent. A held verified-purchaser token
-     * (SRS §3.4.1) rides along as `ugc_token` so the server sets
-     * verified_purchaser=true. Confirmed media (SRS §3.4.4) rides along as the
-     * ordered `media_urls` array — array index = sort_order — and the field is
-     * omitted entirely when no files were attached.
+     * fields (`alias_id`, `fitment_id` + `vehicle_label`, `ugc_token`) are included
+     * only when present so the API receives a clean body; the honeypot `website`
+     * and `cf_turnstile_token` are always sent. The structured vehicle (SRS §3.4.1,
+     * Slice B) rides along as `fitment_id` + its resolved `vehicle_label` ONLY when
+     * the user opted to append a vehicle — never a typed string; omitted entirely
+     * when they opt out (the API reads that as "no vehicle"). On the verified path
+     * the server overrides `fitment_id` from the token regardless (§3.2.4). A held
+     * verified-purchaser token rides along as `ugc_token`. Confirmed media
+     * (SRS §3.4.4) rides as the ordered `media_urls` array — index = sort_order —
+     * omitted when no files were attached.
      * @param {Object} fields
      * @param {string} token
      * @returns {Object}
@@ -794,8 +1023,12 @@ export default class UgcProduct {
             payload.alias_id = this.aliasIndex;
         }
 
-        if (fields.vehicle_label) {
-            payload.vehicle_label = fields.vehicle_label;
+        const vehicle = this._readVehicleSelection('review');
+        if (vehicle) {
+            payload.fitment_id = vehicle.fitment_id;
+            if (vehicle.vehicle_label) {
+                payload.vehicle_label = vehicle.vehicle_label;
+            }
         }
 
         if (this.verifiedPurchaserToken) {
@@ -811,6 +1044,9 @@ export default class UgcProduct {
 
     /**
      * Shape the question submission body to the frozen SRS §3.2.5 contract.
+     * Questions have no token path, so the structured vehicle (SRS §3.4.1) is
+     * always the archetype-constrained dropdown's choice — `fitment_id` + its
+     * resolved `vehicle_label`, sent only when the user opted to append a vehicle.
      * @param {Object} fields
      * @param {string} token
      * @returns {Object}
@@ -828,8 +1064,12 @@ export default class UgcProduct {
             payload.alias_id = this.aliasIndex;
         }
 
-        if (fields.vehicle_label) {
-            payload.vehicle_label = fields.vehicle_label;
+        const vehicle = this._readVehicleSelection('question');
+        if (vehicle) {
+            payload.fitment_id = vehicle.fitment_id;
+            if (vehicle.vehicle_label) {
+                payload.vehicle_label = vehicle.vehicle_label;
+            }
         }
 
         return payload;
@@ -865,8 +1105,9 @@ export default class UgcProduct {
 
     /**
      * Read the submission form's named fields, trimming text values. Returns a
-     * flat object keyed by field name (rating/title/body/author/vehicle_label/
-     * website); absent fields resolve to ''.
+     * flat object keyed by field name (rating/title/body/author/website); absent
+     * fields resolve to ''. The vehicle is captured by the structured section
+     * (SRS §3.4.1), NOT a free-text field, so it is read separately on submit.
      * @param {HTMLFormElement} form
      * @returns {Object}
      */
@@ -876,7 +1117,7 @@ export default class UgcProduct {
             return fields;
         }
 
-        const names = ['rating', 'title', 'body', 'author', 'vehicle_label', 'website'];
+        const names = ['rating', 'title', 'body', 'author', 'website'];
         names.forEach((name) => {
             const input = form.querySelector(`[name="${name}"]`);
             fields[name] = input ? input.value.trim() : '';
@@ -1049,6 +1290,14 @@ export default class UgcProduct {
         this.summaryPainted = true;
         this.reviewsLoaded = true;
         this.renderPage(data);
+
+        // A garage/registry change arrived mid-init — its refetch was deferred
+        // (Slice A review nit). Run it now against the latest fitment.
+        if (this.pendingReviewsFitmentRefetch) {
+            this.pendingReviewsFitmentRefetch = false;
+            this.query.page = 1;
+            this.fetchReviews();
+        }
     }
 
     /**
@@ -1074,6 +1323,9 @@ export default class UgcProduct {
      * @returns {Object}
      */
     buildParams() {
+        // Gate fitment_only on a resolved fitment_id (Slice A review nit): the API
+        // requires fitment_id for fitment_only, so never send the flag without one.
+        const fitmentOnly = (this.fitmentOnly && this.fitmentId !== null) ? true : null;
         return {
             page: this.query.page,
             sort: this.query.sort,
@@ -1081,7 +1333,7 @@ export default class UgcProduct {
             verified: this.query.verified,
             media: this.query.media,
             fitment_id: this.fitmentId,
-            fitment_only: this.fitmentOnly ? true : null,
+            fitment_only: fitmentOnly,
         };
     }
 
@@ -1111,11 +1363,10 @@ export default class UgcProduct {
 
     /**
      * Local StateManager subscriber. Re-paints the cached summary so the block
-     * stays consistent across re-renders, refreshes the optional submission
-     * `vehicle_label`, and tracks the selected alias's `qty_alias_index` so it
-     * rides on submissions as `alias_id` (provenance; SRS §3.1.4). No fetch is
-     * triggered here — the fitment filter is driven by the GLOBAL garage state,
-     * not the locally-selected alias.
+     * stays consistent across re-renders and tracks the selected alias's
+     * `qty_alias_index` so it rides on submissions as `alias_id` (provenance;
+     * SRS §3.1.4). No fetch is triggered here — the fitment filter is driven by
+     * the GLOBAL garage state, not the locally-selected alias.
      * @param {Object} [state] - The local StateManager snapshot.
      */
     update(state) {
@@ -1123,24 +1374,7 @@ export default class UgcProduct {
             this.renderSummary();
         }
 
-        this.vehicleLabel = this._resolveVehicleLabel(state);
         this.aliasIndex = this._resolveAliasIndex(state);
-    }
-
-    /**
-     * Pull a human-readable vehicle label off the selected alias to pre-fill the
-     * optional `vehicle_label` submission field (SRS §3.2.4, §3.2.5). Returns null
-     * when no alias is selected or the field is absent.
-     * @param {Object} [state] - The local StateManager snapshot.
-     * @returns {string|null}
-     */
-    _resolveVehicleLabel(state) {
-        const aliasData = state && state.aliasData;
-        if (!aliasData || !aliasData.vehicle_label) {
-            return null;
-        }
-
-        return String(aliasData.vehicle_label);
     }
 
     /**
@@ -1201,14 +1435,21 @@ export default class UgcProduct {
         // unfiltered newest-first view (SRS §3.4.1).
         this.fitmentOnly = false;
 
+        // Before a list has loaded, the in-flight init fetch already captured the
+        // prior params — defer the refetch until init completes rather than drop
+        // it (Slice A review nit).
         if (this.reviewsLoaded) {
             this.query.page = 1;
             this.fetchReviews();
+        } else {
+            this.pendingReviewsFitmentRefetch = true;
         }
 
         if (this.questionsLoaded) {
             this.questionQuery.page = 1;
             this.fetchQuestions();
+        } else {
+            this.pendingQuestionsFitmentRefetch = true;
         }
     }
 
@@ -1368,6 +1609,14 @@ export default class UgcProduct {
 
         this.questionsLoaded = true;
         this.renderQuestionsPage(result.data || {});
+
+        // A garage/registry change arrived mid-init — its refetch was deferred
+        // (Slice A review nit). Run it now against the latest fitment.
+        if (this.pendingQuestionsFitmentRefetch) {
+            this.pendingQuestionsFitmentRefetch = false;
+            this.questionQuery.page = 1;
+            this.fetchQuestions();
+        }
     }
 
     /**
@@ -1389,11 +1638,13 @@ export default class UgcProduct {
      * @returns {Object}
      */
     buildQuestionParams() {
+        // Gate fitment_only on a resolved fitment_id (Slice A review nit).
+        const fitmentOnly = (this.fitmentOnly && this.fitmentId !== null) ? true : null;
         return {
             page: this.questionQuery.page,
             sort: this.questionQuery.sort,
             fitment_id: this.fitmentId,
-            fitment_only: this.fitmentOnly ? true : null,
+            fitment_only: fitmentOnly,
         };
     }
 

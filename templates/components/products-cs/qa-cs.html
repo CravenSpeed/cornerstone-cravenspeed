@@ -37,10 +37,12 @@
                         <span class="cs-ugc-field-label">{{lang 'products.questions.submit.author_label'}} *</span>
                         <input class="cs-ugc-input" type="text" name="author" data-question-field="author" maxlength="60" required>
                     </label>
-                    <label class="cs-ugc-field">
-                        <span class="cs-ugc-field-label">{{lang 'products.questions.submit.vehicle_label'}}</span>
-                        <input class="cs-ugc-input" type="text" name="vehicle_label" data-question-field="vehicle_label">
-                    </label>
+                    {{!-- Structured vehicle section (SRS §3.4.1, M9 Slice B): no
+                    free-text vehicle input. Questions have no token path, so
+                    ugcProduct.js always paints the make/model/generation dropdown
+                    constrained to the archetype's own fitments. Empty (absent) on
+                    universal products. --}}
+                    <div class="cs-ugc-vehicle" data-question-vehicle></div>
 
                     <label class="cs-ugc-honeypot" aria-hidden="true">
                         <span>{{lang 'products.questions.submit.website_label'}}</span>

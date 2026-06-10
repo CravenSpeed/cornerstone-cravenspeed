@@ -1313,6 +1313,32 @@ $cs-button-height: 50px;
   color: stencilColor('color-greyDark');
 }
 
+// Structured vehicle section (SRS §3.4.1, M9 Slice B). Populated async by
+// ugcProduct.js on modal open — the verified pre-checked option or the
+// archetype-constrained dropdown. Reserves vertical space so the late paint
+// never shifts the form (CLS-safe): it stays in flow when empty rather than
+// collapsing with display:none.
+.cs-ugc-vehicle {
+  min-height: 1.5rem;
+}
+
+.cs-ugc-vehicle-append,
+.cs-ugc-vehicle-append-row {
+  display: flex;
+  align-items: center;
+  gap: spacing('quarter');
+}
+
+.cs-ugc-vehicle-picker {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('quarter');
+}
+
+.cs-ugc-vehicle-select {
+  width: 100%;
+}
+
 // Processing state during the media confirm pipeline (SRS §3.4.4). Reserves
 // vertical space so toggling it on/off never shifts the form (CLS-safe): the
 // element keeps its min-height when hidden rather than collapsing to display:none.

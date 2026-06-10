@@ -79,10 +79,12 @@
                         <span class="cs-ugc-field-label">{{lang 'products.reviews.submit.author_label'}} *</span>
                         <input class="cs-ugc-input" type="text" name="author" data-review-field="author" maxlength="60" required>
                     </label>
-                    <label class="cs-ugc-field">
-                        <span class="cs-ugc-field-label">{{lang 'products.reviews.submit.vehicle_label'}}</span>
-                        <input class="cs-ugc-input" type="text" name="vehicle_label" data-review-field="vehicle_label">
-                    </label>
+                    {{!-- Structured vehicle section (SRS §3.4.1, M9 Slice B): no
+                    free-text vehicle input. Populated on open by ugcProduct.js —
+                    the verified pre-checked "Add your <vehicle>" option, or a
+                    make/model/generation dropdown constrained to the archetype's
+                    own fitments. Empty (absent) on universal products. --}}
+                    <div class="cs-ugc-vehicle" data-review-vehicle></div>
                     <label class="cs-ugc-field cs-ugc-field--media">
                         <span class="cs-ugc-field-label">{{lang 'products.reviews.submit.media_label'}}</span>
                         <input class="cs-ugc-input cs-ugc-input--file" type="file" name="media" data-review-field="media" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime" multiple>
