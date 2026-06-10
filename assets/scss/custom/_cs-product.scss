@@ -1037,8 +1037,23 @@ $cs-button-height: 50px;
   color: stencilColor('color-greyDark');
 }
 
+// Structured-vehicle badge (cs-ugc SRS §3.4 / Pass 27). Shared across review
+// cards, question cards, and the home overview wall — the review's
+// system-generated `vehicle_label` (e.g. 'MINI Cooper F56'), display-only.
+// Absent entirely when the item has no vehicle, so no space is reserved.
+.cs-ugc-vehicle-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.125rem spacing('half');
+  border: 1px solid stencilColor('color-textSecondary');
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .cs-review-vehicle {
-  font-style: italic;
   margin: 0 0 spacing('half');
 }
 
@@ -1166,7 +1181,6 @@ $cs-button-height: 50px;
 }
 
 .cs-question-vehicle {
-  font-style: italic;
   margin: 0 0 spacing('half');
 }
 

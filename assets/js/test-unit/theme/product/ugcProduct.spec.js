@@ -2935,3 +2935,130 @@ describe('UgcProduct (#30 — review media display)', () => {
         });
     });
 });
+
+// Slice C (#158, SRS §3.4 / §3.2.1 / §3.2.2): the structured-vehicle badge on
+// review and question cards — the item's system-generated `vehicle_label`,
+// rendered directly from the envelope (no client-side fitment resolution),
+// absent entirely when the item has no vehicle.
+describe('UgcProduct (slice C — structured-vehicle badge on cards)', () => {
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    describe('review cards', () => {
+        beforeEach(() => {
+            mountScaffold();
+        });
+
+        it('renders the badge from vehicle_label with the shared badge class', async () => {
+            const api = buildApi(okEnvelope({
+                total: 1,
+                items: [{
+                    id: 1, author: 'Jane D.', rating: 5, title: 't', body: 'b',
+                    vehicle_label: 'MINI Cooper F56', date: '2026-01-15T00:00:00Z',
+                }],
+            }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const badge = document.querySelector('#product-reviews .cs-review-vehicle');
+            expect(badge).not.toBeNull();
+            expect(badge.classList.contains('cs-ugc-vehicle-badge')).toBe(true);
+            expect(badge.textContent).toBe('MINI Cooper F56');
+        });
+
+        it('omits the badge when the review has no vehicle (null / missing label)', async () => {
+            const api = buildApi(okEnvelope({
+                total: 2,
+                items: [
+                    {
+                        id: 1, author: 'A', rating: 5, title: 't', body: 'b',
+                        vehicle_label: null, date: '2026-01-15T00:00:00Z',
+                    },
+                    {
+                        id: 2, author: 'B', rating: 4, title: 't', body: 'b',
+                        date: '2026-02-01T00:00:00Z',
+                    },
+                ],
+            }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(document.querySelectorAll('#product-reviews .cs-review')).toHaveLength(2);
+            expect(document.querySelector('#product-reviews .cs-review-vehicle')).toBeNull();
+        });
+
+        it('escapes the vehicle_label (no XSS via the badge)', async () => {
+            const api = buildApi(okEnvelope({
+                total: 1,
+                items: [{
+                    id: 1, author: 'A', rating: 5, title: 't', body: 'b',
+                    vehicle_label: '<img src=x onerror=alert(1)>', date: '2026-01-15T00:00:00Z',
+                }],
+            }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const badge = document.querySelector('#product-reviews .cs-review-vehicle');
+            expect(badge).not.toBeNull();
+            expect(badge.querySelector('img')).toBeNull();
+            expect(badge.textContent).toBe('<img src=x onerror=alert(1)>');
+        });
+    });
+
+    describe('question cards', () => {
+        const buildQaApi = result => ({
+            getReviews: jest.fn(() => Promise.resolve({ ok: true, status: 200, data: buildEnvelope() })),
+            getQuestions: jest.fn(() => Promise.resolve(result)),
+        });
+
+        const okQuestions = items => ({
+            ok: true,
+            status: 200,
+            data: {
+                items, total: items.length, page: 1, per_page: 10,
+            },
+        });
+
+        beforeEach(() => {
+            document.body.innerHTML = `
+                <div class="cs-questions-toolbar" data-questions-toolbar>
+                    <select data-questions-control="sort">
+                        <option value="date_desc">Newest</option>
+                        <option value="date_asc">Oldest</option>
+                    </select>
+                    <div class="cs-fitment-chip-slot" data-questions-fitment-chip></div>
+                </div>
+                <div id="product-questions"></div>
+                <div class="cs-questions-pagination" data-questions-pagination></div>
+            `;
+        });
+
+        it('renders the badge from vehicle_label with the shared badge class', async () => {
+            const api = buildQaApi(okQuestions([{
+                id: 1, author: 'Jane D.', body: 'Does this fit?',
+                vehicle_label: 'MINI Cooper F56', staff_answer: 'Yes.',
+                date: '2026-05-01T12:00:00Z',
+            }]));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const badge = document.querySelector('#product-questions .cs-question-vehicle');
+            expect(badge).not.toBeNull();
+            expect(badge.classList.contains('cs-ugc-vehicle-badge')).toBe(true);
+            expect(badge.textContent).toBe('MINI Cooper F56');
+        });
+
+        it('omits the badge when the question has no vehicle', async () => {
+            const api = buildQaApi(okQuestions([{
+                id: 1, author: 'Bob', body: 'Is hardware included?',
+                staff_answer: 'Yes.', date: '2026-04-15T00:00:00Z',
+            }]));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(document.querySelectorAll('#product-questions .cs-question')).toHaveLength(1);
+            expect(document.querySelector('#product-questions .cs-question-vehicle')).toBeNull();
+        });
+    });
+});

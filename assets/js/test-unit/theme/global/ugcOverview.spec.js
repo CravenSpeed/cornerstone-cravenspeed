@@ -2,6 +2,7 @@ import UgcOverview, {
     FILTERS,
     applyFilter,
     buildStarIcons,
+    buildVehicleBadge,
     paginate,
     pageCount,
 } from '../../../theme/_addons/global/ugcOverview';
@@ -97,6 +98,26 @@ describe('ugcOverview pure helpers', () => {
             const reviews = [{ rating: 5 }, { rating: 5, media: null }];
             expect(applyFilter(reviews, FILTERS.WITH_PHOTOS)).toHaveLength(0);
             expect(applyFilter(reviews, FILTERS.BASIC)).toHaveLength(2);
+        });
+    });
+
+    describe('buildVehicleBadge', () => {
+        it('renders the system-generated vehicle_label inside the badge', () => {
+            const html = buildVehicleBadge('MINI Cooper F56');
+            expect(html).toContain('cs-ugc-vehicle-badge');
+            expect(html).toContain('MINI Cooper F56');
+        });
+
+        it('escapes the label (no XSS via vehicle_label)', () => {
+            const html = buildVehicleBadge('<img src=x onerror=alert(1)>');
+            expect(html).not.toContain('<img');
+            expect(html).toContain('&lt;img');
+        });
+
+        it('omits the badge entirely when there is no vehicle (null / empty / missing)', () => {
+            expect(buildVehicleBadge(null)).toBe('');
+            expect(buildVehicleBadge(undefined)).toBe('');
+            expect(buildVehicleBadge('')).toBe('');
         });
     });
 
@@ -237,5 +258,29 @@ describe('UgcOverview controller', () => {
 
         const img = document.querySelector('.cs-ugc-overview-thumb img');
         expect(img.getAttribute('src')).toBe('https://cdn/0/thumb.jpg');
+    });
+
+    it('renders the structured-vehicle badge on a wall card from vehicle_label', async () => {
+        const reviews = makeReviews(1);
+        reviews[0].vehicle_label = 'MINI Cooper F56';
+        api.getOverview.mockResolvedValue(okResult(reviews));
+        const overview = mount();
+        await overview.init();
+
+        const badge = document.querySelector('.cs-ugc-overview-card .cs-ugc-vehicle-badge');
+        expect(badge).not.toBeNull();
+        expect(badge.textContent).toBe('MINI Cooper F56');
+    });
+
+    it('omits the badge on a wall card with no vehicle (null / missing label)', async () => {
+        const reviews = makeReviews(2);
+        reviews[0].vehicle_label = null;
+        // reviews[1] has no vehicle_label key at all.
+        api.getOverview.mockResolvedValue(okResult(reviews));
+        const overview = mount();
+        await overview.init();
+
+        expect(document.querySelectorAll('.cs-ugc-overview-card')).toHaveLength(2);
+        expect(document.querySelector('.cs-ugc-vehicle-badge')).toBeNull();
     });
 });

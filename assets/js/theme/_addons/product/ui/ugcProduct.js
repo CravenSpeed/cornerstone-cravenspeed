@@ -1785,7 +1785,7 @@ export default class UgcProduct {
                     <span class="cs-question-author">${author}</span>
                     ${date ? `<span class="cs-question-date">${date}</span>` : ''}
                 </p>
-                ${vehicle ? `<p class="cs-question-vehicle">${vehicle}</p>` : ''}
+                ${vehicle ? `<p class="cs-ugc-vehicle-badge cs-question-vehicle">${vehicle}</p>` : ''}
                 <p class="cs-question-body">${body}</p>
                 ${answer}
             </article>`;
@@ -2386,7 +2386,7 @@ export default class UgcProduct {
                     ${verified}
                     ${edited}
                 </p>
-                ${vehicle ? `<p class="cs-review-vehicle">${vehicle}</p>` : ''}
+                ${vehicle ? `<p class="cs-ugc-vehicle-badge cs-review-vehicle">${vehicle}</p>` : ''}
                 <p class="cs-review-body">${body}</p>
                 ${media}
                 ${staff}
