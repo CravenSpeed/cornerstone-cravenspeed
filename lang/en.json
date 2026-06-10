@@ -763,7 +763,6 @@
             "filter_rating_all": "All ratings",
             "filter_verified": "Verified purchasers",
             "filter_media": "With photos & videos",
-            "filter_vehicle_first": "My vehicle first",
             "form_write": {
                 "name": "Name",
                 "email": "Email",
@@ -794,7 +793,6 @@
         "questions": {
             "header": "Q&A",
             "sort_label": "Sort by",
-            "filter_vehicle_first": "My vehicle first",
             "sort_newest": "Newest",
             "sort_oldest": "Oldest",
             "submit": {

@@ -7,12 +7,11 @@
                 <option value="date_asc">{{lang 'products.questions.sort_oldest'}}</option>
             </select>
         </label>
-        {{!-- Opt-in alias-aware sort: disabled until a vehicle is selected;
-        ugcProduct.js enables it and mirrors it with the reviews toolbar's copy. --}}
-        <label class="cs-questions-control cs-questions-control--toggle">
-            <input type="checkbox" data-questions-control="vehicle_first" disabled>
-            <span class="cs-questions-control-label">{{lang 'products.questions.filter_vehicle_first'}}</span>
-        </label>
+        {{!-- "For your <vehicle>" fitment filter chip (SRS §3.4.1). Populated
+        async by ugcProduct.js only when the envelope's fitment_question_count > 0;
+        space is reserved via min-height + visibility:hidden in SCSS so the late
+        paint never shifts the toolbar. --}}
+        <div class="cs-fitment-chip-slot" data-questions-fitment-chip></div>
         <button type="button" class="button button--primary cs-ugc-submit-open" data-question-modal-open>
             {{lang 'products.questions.submit.open'}}
         </button>

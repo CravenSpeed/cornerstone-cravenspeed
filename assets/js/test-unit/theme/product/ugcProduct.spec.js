@@ -26,6 +26,43 @@ const buildStateManager = () => {
     };
 };
 
+// Minimal GlobalStateManager stub: holds a vehicle.selected + a search registry
+// and lets a test emit a new global snapshot. `registry.models[model]
+// .generations[generation]` mirrors the search-JSON shape resolveGarageFitment
+// reads (object generation node `{ name, fitment_id }`, SRS §3.1.4 Pass 27).
+const F56_REGISTRY = {
+    models: {
+        cooper: {
+            name: 'Cooper',
+            generations: {
+                f56: { name: 'MINI Cooper F56', fitment_id: 87 },
+                r53: { name: 'MINI Cooper R53', fitment_id: 42 },
+            },
+        },
+    },
+};
+
+const F56_GARAGE = { make: 'mini', model: 'cooper', generation: 'f56' };
+
+const buildGlobalStateManager = (initial = {}) => {
+    const subscribers = new Set();
+    let state = {
+        vehicle: { selected: initial.vehicle || null },
+        search: { data: initial.registry ? { vehicle_registry: initial.registry } : null },
+    };
+    return {
+        getState: jest.fn(() => state),
+        subscribe: jest.fn((cb) => {
+            subscribers.add(cb);
+            return () => subscribers.delete(cb);
+        }),
+        _set(next) {
+            state = next;
+            subscribers.forEach(cb => cb(state));
+        },
+    };
+};
+
 const buildApi = result => ({
     getReviews: jest.fn(() => Promise.resolve(result)),
 });
@@ -49,7 +86,7 @@ const mountScaffold = () => {
             </select>
             <input type="checkbox" data-reviews-control="verified">
             <input type="checkbox" data-reviews-control="media">
-            <input type="checkbox" data-reviews-control="vehicle_first" disabled>
+            <div class="cs-fitment-chip-slot" data-reviews-fitment-chip></div>
         </div>
         <div id="product-reviews"></div>
         <div class="cs-reviews-pagination" data-reviews-pagination></div>
@@ -103,13 +140,15 @@ describe('UgcProduct (slice 6a)', () => {
 
         // verified/media are null (omitted by buildQuery) until toggled on; rating
         // is null until selected; sort defaults to date_desc (SRS §3.2.1).
+        // fitment_id is null with no garage; fitment_only stays null (off).
         expect(api.getReviews).toHaveBeenCalledWith(ARCHETYPE_ID, {
             page: 1,
             sort: 'date_desc',
             rating: null,
             verified: null,
             media: null,
-            sort_alias: null,
+            fitment_id: null,
+            fitment_only: null,
         });
     });
 
@@ -567,7 +606,7 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
                     <option value="date_desc">Newest</option>
                     <option value="date_asc">Oldest</option>
                 </select>
-                <input type="checkbox" data-questions-control="vehicle_first" disabled>
+                <div class="cs-fitment-chip-slot" data-questions-fitment-chip></div>
             </div>
             <div id="product-questions"></div>
             <div class="cs-questions-pagination" data-questions-pagination></div>
@@ -596,7 +635,8 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
         expect(api.getQuestions).toHaveBeenCalledWith(ARCHETYPE_ID, {
             page: 1,
             sort: 'date_desc',
-            sort_alias: null,
+            fitment_id: null,
+            fitment_only: null,
         });
     });
 
@@ -712,7 +752,9 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
             await flush();
 
             expect(api.getQuestions).toHaveBeenCalledTimes(2);
-            expect(qParamsOfCall(api, 2)).toEqual({ sort: expected, page: 1, sort_alias: null });
+            expect(qParamsOfCall(api, 2)).toEqual({
+                sort: expected, page: 1, fitment_id: null, fitment_only: null,
+            });
         });
 
         it('resets to page 1 when the sort changes after paging forward', async () => {
@@ -789,36 +831,53 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
         });
     });
 
-    it('floats alias-matching questions only when the vehicle-first toggle is on', async () => {
-        const stateManager = buildStateManager();
-        const api = buildQaApi(okQuestions());
-        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+    it('passes the garage fitment_id on the initial questions fetch and shows the chip on count > 0', async () => {
+        const api = buildQaApi(okQuestions({ fitment_question_count: 4 }));
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
         await flush();
 
-        // Initial Q&A fetch carries no sort_alias; the toggle is disabled.
-        expect(qParamsOfCall(api, 1).sort_alias).toBeNull();
-        const toggle = document.querySelector('[data-questions-control="vehicle_first"]');
-        expect(toggle.disabled).toBe(true);
+        expect(qParamsOfCall(api, 1).fitment_id).toBe(87);
+        expect(qParamsOfCall(api, 1).fitment_only).toBeNull();
 
-        // Selecting an alias enables the toggle but does NOT refetch — the
-        // float is opt-in.
-        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        const chip = document.querySelector('[data-questions-fitment-chip]');
+        const toggle = chip.querySelector('[data-fitment-chip-toggle]');
+        expect(toggle).not.toBeNull();
+        expect(toggle.textContent).toContain('For your MINI Cooper F56');
+        expect(chip.style.visibility).toBe('visible');
+    });
+
+    it('hard-filters questions with fitment_only when the Q&A chip is clicked, and clears it', async () => {
+        const api = buildQaApi(okQuestions({ fitment_question_count: 4 }));
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
         await flush();
-        expect(api.getQuestions).toHaveBeenCalledTimes(1);
-        expect(toggle.disabled).toBe(false);
 
-        toggle.checked = true;
-        toggle.dispatchEvent(new Event('change', { bubbles: true }));
+        document.querySelector('[data-questions-fitment-chip] [data-fitment-chip-toggle]').click();
         await flush();
         expect(api.getQuestions).toHaveBeenCalledTimes(2);
-        expect(qParamsOfCall(api, 2).sort_alias).toBe(4821);
+        expect(qParamsOfCall(api, 2)).toEqual({
+            page: 1, sort: 'date_desc', fitment_id: 87, fitment_only: true,
+        });
 
-        // Deselecting the alias drops the param and disables the toggle.
-        stateManager._emit({ aliasData: null });
+        document.querySelector('[data-questions-fitment-chip] [data-fitment-chip-clear]').click();
         await flush();
         expect(api.getQuestions).toHaveBeenCalledTimes(3);
-        expect(qParamsOfCall(api, 3).sort_alias).toBeNull();
-        expect(toggle.disabled).toBe(true);
+        expect(qParamsOfCall(api, 3).fitment_only).toBeNull();
+    });
+
+    it('hides the Q&A chip when fitment_question_count is 0 (universal / no match)', async () => {
+        const api = buildQaApi(okQuestions({ fitment_question_count: 0 }));
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+        await flush();
+
+        const chip = document.querySelector('[data-questions-fitment-chip]');
+        expect(chip.innerHTML).toBe('');
+        expect(chip.style.visibility).toBe('hidden');
     });
 
     it('does not fetch questions when the Q&A DOM is absent', async () => {
@@ -844,7 +903,7 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
     });
 });
 
-describe('UgcProduct (slice 6d — alias-aware sort)', () => {
+describe('UgcProduct (slice A — fitment filter chip, reviews)', () => {
     beforeEach(() => {
         mountScaffold();
     });
@@ -855,65 +914,118 @@ describe('UgcProduct (slice 6d — alias-aware sort)', () => {
 
     const paramsOfCall = (api, n) => api.getReviews.mock.calls[n - 1][1];
 
-    // A reviews-only api that returns a fresh ok envelope on every call, so each
-    // alias-driven refetch can be asserted against its params.
-    const buildReviewsApi = () => ({
-        getReviews: jest.fn(() => Promise.resolve(okEnvelope())),
+    const reviewsChip = () => document.querySelector('[data-reviews-fitment-chip]');
+
+    // A reviews-only api that returns a fresh envelope (default fitment count of
+    // 4) on every call, so each refetch can be asserted against its params.
+    const buildReviewsApi = (count = 4) => ({
+        getReviews: jest.fn(() => Promise.resolve(okEnvelope({ fitment_review_count: count }))),
     });
 
-    it('omits sort_alias on the initial fetch (no alias selected)', async () => {
+    it('passes the garage fitment_id on the initial reviews fetch', async () => {
         const api = buildReviewsApi();
-        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
         await flush();
 
-        expect(paramsOfCall(api, 1).sort_alias).toBeNull();
+        expect(paramsOfCall(api, 1).fitment_id).toBe(87);
+        expect(paramsOfCall(api, 1).fitment_only).toBeNull();
     });
 
-    it('refetches reviews with sort_alias when the toggle is on and an alias is selected', async () => {
-        const stateManager = buildStateManager();
+    it('omits fitment_id when there is no garage vehicle', async () => {
         const api = buildReviewsApi();
-        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+        const global = buildGlobalStateManager({ registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
         await flush();
 
-        // Alias selection alone never refetches — floating is opt-in.
-        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
-        await flush();
-        expect(api.getReviews).toHaveBeenCalledTimes(1);
+        expect(paramsOfCall(api, 1).fitment_id).toBeNull();
+        expect(reviewsChip().style.visibility).toBe('hidden');
+    });
 
-        toggleCheckbox('vehicle_first', true);
+    it('omits fitment_id for an un-filterable (null fitment_id) generation', async () => {
+        const api = buildReviewsApi(0);
+        const registry = {
+            models: {
+                cooper: { name: 'Cooper', generations: { f56: { name: 'MINI Cooper F56', fitment_id: null } } },
+            },
+        };
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+        await flush();
+
+        expect(paramsOfCall(api, 1).fitment_id).toBeNull();
+        expect(reviewsChip().style.visibility).toBe('hidden');
+    });
+
+    it('shows the "For your <vehicle>" chip only when fitment_review_count > 0', async () => {
+        const api = buildReviewsApi(7);
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+        await flush();
+
+        const chip = reviewsChip();
+        const toggle = chip.querySelector('[data-fitment-chip-toggle]');
+        expect(toggle).not.toBeNull();
+        expect(toggle.textContent).toContain('For your MINI Cooper F56');
+        expect(chip.querySelector('.cs-fitment-chip-count').textContent).toBe('7');
+        expect(chip.style.visibility).toBe('visible');
+    });
+
+    it('hides the chip when fitment_review_count is 0 (universal / no match)', async () => {
+        const api = buildReviewsApi(0);
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+        await flush();
+
+        const chip = reviewsChip();
+        expect(chip.innerHTML).toBe('');
+        expect(chip.style.visibility).toBe('hidden');
+    });
+
+    it('hard-filters with fitment_only=true on chip click and resets to page 1', async () => {
+        const api = buildReviewsApi(5);
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+        await flush();
+
+        reviewsChip().querySelector('[data-fitment-chip-toggle]').click();
         await flush();
 
         expect(api.getReviews).toHaveBeenCalledTimes(2);
-        expect(paramsOfCall(api, 2).sort_alias).toBe(4821);
+        expect(paramsOfCall(api, 2)).toEqual({
+            page: 1,
+            sort: 'date_desc',
+            rating: null,
+            verified: null,
+            media: null,
+            fitment_id: 87,
+            fitment_only: true,
+        });
+        expect(reviewsChip().querySelector('[data-fitment-chip-toggle]').classList).toContain('is-active');
     });
 
-    it('drops sort_alias when the alias is deselected', async () => {
-        const stateManager = buildStateManager();
-        const api = buildReviewsApi();
-        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+    it('clears the hard filter (drops fitment_only) when the clear control is clicked', async () => {
+        const api = buildReviewsApi(5);
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
         await flush();
 
-        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        reviewsChip().querySelector('[data-fitment-chip-toggle]').click();
         await flush();
-        toggleCheckbox('vehicle_first', true);
-        await flush();
-        expect(paramsOfCall(api, 2).sort_alias).toBe(4821);
+        expect(paramsOfCall(api, 2).fitment_only).toBe(true);
 
-        stateManager._emit({ aliasData: null });
+        reviewsChip().querySelector('[data-fitment-chip-clear]').click();
         await flush();
-
         expect(api.getReviews).toHaveBeenCalledTimes(3);
-        expect(paramsOfCall(api, 3).sort_alias).toBeNull();
+        expect(paramsOfCall(api, 3).fitment_only).toBeNull();
     });
 
-    it('preserves the active sort and filters across an alias-driven refetch', async () => {
-        const stateManager = buildStateManager();
-        const api = buildReviewsApi();
-        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+    it('composes fitment_only with the active sort and filters', async () => {
+        const api = buildReviewsApi(5);
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
         await flush();
 
-        // Establish a non-default sort and two active filters before the alias
-        // is selected — they must survive the alias refetch unchanged.
         changeSelect('sort', 'rating_desc');
         await flush();
         changeSelect('rating', '4');
@@ -921,9 +1033,7 @@ describe('UgcProduct (slice 6d — alias-aware sort)', () => {
         toggleCheckbox('verified', true);
         await flush();
 
-        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
-        await flush();
-        toggleCheckbox('vehicle_first', true);
+        reviewsChip().querySelector('[data-fitment-chip-toggle]').click();
         await flush();
 
         const last = paramsOfCall(api, api.getReviews.mock.calls.length);
@@ -933,62 +1043,74 @@ describe('UgcProduct (slice 6d — alias-aware sort)', () => {
             rating: 4,
             verified: true,
             media: null,
-            sort_alias: 4821,
+            fitment_id: 87,
+            fitment_only: true,
         });
     });
 
-    it('resets to page 1 when the alias selection changes', async () => {
-        const stateManager = buildStateManager();
-        const api = {
-            getReviews: jest.fn(() => Promise.resolve(okEnvelope({ total: 25, page: 1, per_page: 10 }))),
-        };
-        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+    it('re-resolves and refetches when a late-arriving registry resolves the garage vehicle', async () => {
+        const api = buildReviewsApi(3);
+        // Garage selected, but the registry has not loaded yet → no fitment_id.
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
         await flush();
 
-        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
-        toggleCheckbox('vehicle_first', true);
-        await flush();
-        expect(paramsOfCall(api, 2).sort_alias).toBe(4821);
+        expect(paramsOfCall(api, 1).fitment_id).toBeNull();
 
-        document.querySelector('[data-reviews-page="3"]').click();
+        // Search data arrives: registry now resolves the garage to fitment 87.
+        global._set({
+            vehicle: { selected: F56_GARAGE },
+            search: { data: { vehicle_registry: F56_REGISTRY } },
+        });
         await flush();
-        expect(paramsOfCall(api, 3).page).toBe(3);
 
-        // Switching to a different alias re-floats and resets the page.
-        stateManager._emit({ aliasData: { qty_alias_index: 7777 } });
-        await flush();
-        expect(paramsOfCall(api, 4).page).toBe(1);
-        expect(paramsOfCall(api, 4).sort_alias).toBe(7777);
+        expect(api.getReviews).toHaveBeenCalledTimes(2);
+        expect(paramsOfCall(api, 2).fitment_id).toBe(87);
+        expect(paramsOfCall(api, 2).page).toBe(1);
+        expect(reviewsChip().style.visibility).toBe('visible');
     });
 
-    it('does not refetch when an unrelated state notification leaves the alias unchanged', async () => {
-        const stateManager = buildStateManager();
-        const api = buildReviewsApi();
-        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+    it('refetches with the new fitment_id and resets the hard filter on a garage swap', async () => {
+        const api = buildReviewsApi(3);
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
         await flush();
 
-        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
-        toggleCheckbox('vehicle_first', true);
+        // Turn the hard filter on for the F56.
+        reviewsChip().querySelector('[data-fitment-chip-toggle]').click();
         await flush();
-        expect(api.getReviews).toHaveBeenCalledTimes(2);
+        expect(paramsOfCall(api, 2).fitment_only).toBe(true);
 
-        // Same alias re-emitted (e.g. inventory/blem change) — no extra fetch.
-        stateManager._emit({ aliasData: { qty_alias_index: 4821 }, blemSelected: true });
+        // Swap the garage to the R53 (fitment 42) — the filter resets to off.
+        global._set({
+            vehicle: { selected: { make: 'mini', model: 'cooper', generation: 'r53' } },
+            search: { data: { vehicle_registry: F56_REGISTRY } },
+        });
         await flush();
-        expect(api.getReviews).toHaveBeenCalledTimes(2);
+
+        expect(paramsOfCall(api, 3).fitment_id).toBe(42);
+        expect(paramsOfCall(api, 3).fitment_only).toBeNull();
+        expect(paramsOfCall(api, 3).page).toBe(1);
     });
 
-    it('treats a missing or non-numeric qty_alias_index as no alias sort', async () => {
+    it('still tracks qty_alias_index as alias_id provenance without refetching', async () => {
         const stateManager = buildStateManager();
         const api = buildReviewsApi();
-        new UgcProduct(ARCHETYPE_ID, stateManager, api);
+        const ugc = new UgcProduct(ARCHETYPE_ID, stateManager, api);
         await flush();
+        expect(api.getReviews).toHaveBeenCalledTimes(1);
 
-        // A "self" simple-product alias whose JSON carries no published index
-        // must not trigger an alias refetch and must not send sort_alias.
+        // A local alias selection updates provenance but never triggers a fetch
+        // (the removed sort_alias relevance sort is gone).
+        stateManager._emit({ aliasData: { qty_alias_index: 4821 } });
+        await flush();
+        expect(api.getReviews).toHaveBeenCalledTimes(1);
+        expect(ugc.aliasIndex).toBe(4821);
+
         stateManager._emit({ aliasData: { bc_id: 99 } });
         await flush();
         expect(api.getReviews).toHaveBeenCalledTimes(1);
+        expect(ugc.aliasIndex).toBeNull();
     });
 });
 

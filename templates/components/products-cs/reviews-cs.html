@@ -34,12 +34,11 @@
             <input type="checkbox" data-reviews-control="media">
             <span class="cs-reviews-control-label">{{lang 'products.reviews.filter_media'}}</span>
         </label>
-        {{!-- Opt-in alias-aware sort: disabled until a vehicle is selected;
-        ugcProduct.js enables it and mirrors it with the Q&A toolbar's copy. --}}
-        <label class="cs-reviews-control cs-reviews-control--toggle">
-            <input type="checkbox" data-reviews-control="vehicle_first" disabled>
-            <span class="cs-reviews-control-label">{{lang 'products.reviews.filter_vehicle_first'}}</span>
-        </label>
+        {{!-- "For your <vehicle>" fitment filter chip (SRS §3.4.1). Populated
+        async by ugcProduct.js only when the envelope's fitment_review_count > 0;
+        space is reserved via min-height + visibility:hidden in SCSS so the late
+        paint never shifts the toolbar. --}}
+        <div class="cs-fitment-chip-slot" data-reviews-fitment-chip></div>
         <button type="button" class="button button--primary cs-ugc-submit-open" data-review-modal-open>
             {{lang 'products.reviews.submit.open'}}
         </button>
