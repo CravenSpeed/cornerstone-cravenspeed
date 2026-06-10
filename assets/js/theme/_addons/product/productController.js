@@ -80,6 +80,7 @@ export default class ProductController {
                 ugcApi,
                 undefined,
                 GlobalStateManager,
+                archetypeData,
             );
 
             this.unsubscribeLocal = this.stateManager.subscribe(this.handleLocalStateChange.bind(this));
