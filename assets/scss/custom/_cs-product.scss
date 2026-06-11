@@ -1392,40 +1392,89 @@ button.cs-ugc-vehicle-badge {
   width: 100%;
   max-width: 32rem;
   margin: spacing('single') 0;
-  padding: spacing('double') spacing('single') spacing('single');
+  padding: 0 spacing('single') spacing('single');
   background: stencilColor('color-white');
-  border-radius: 4px;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
   color: stencilColor('color-textBase');
 
   @include breakpoint('medium') {
-    padding: spacing('double');
-  }
-
-  h4 {
-    margin: 0 0 spacing('single');
-    padding-right: spacing('double');
-    font-weight: 700;
-    color: stencilColor('color-textHeading');
+    padding: 0 spacing('double') spacing('double');
   }
 }
 
+// Modern modal header band: stacked title + supporting subtitle. A tinted fill
+// that bleeds to the dialog edges (negative margins cancel the dialog padding)
+// sets it off as a distinct zone. The right padding reserves room for the close
+// button, which anchors to the dialog corner (not this header). Replaces the
+// bare storefront h4 + floating close.
+.cs-ugc-modal-header {
+  margin: 0 (-(spacing('single'))) spacing('single');
+  padding: spacing('single') 3rem spacing('single') spacing('single');
+  background: stencilColor('color-greyLightest');
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 0.75rem 0.75rem 0 0;
+
+  @include breakpoint('medium') {
+    margin: 0 (-(spacing('double'))) spacing('single');
+    padding: spacing('single') 3rem spacing('single') spacing('double');
+  }
+}
+
+.cs-ugc-modal-heading {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('quarter');
+}
+
+// Selector deliberately carries two classes: it must outrank the `.tab-content
+// h4` / `.modal-content h4` red-underline rule (specificity 0,1,1) that the modal
+// renders inside — a flat `.cs-ugc-modal-title` (0,1,0) loses and the red border
+// bleeds through. `.cs-ugc-modal-header .cs-ugc-modal-title` (0,2,0) wins.
+.cs-ugc-modal-header .cs-ugc-modal-title {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: stencilColor('color-textHeading');
+  border-bottom: 0;
+}
+
+.cs-ugc-modal-subtitle {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: stencilColor('color-greyDark');
+}
+
+// Anchored to the dialog corner (the dialog is position: relative), floating
+// above the tinted header band. Matches the established circular icon-button
+// pattern (.cs-fitment-chip-clear): transparent until hover/focus, generous
+// touch target, primary focus ring.
 .cs-ugc-modal-close {
   position: absolute;
   top: spacing('half');
   right: spacing('half');
-  width: 2rem;
-  height: 2rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
   padding: 0;
   font-size: 1.5rem;
   line-height: 1;
   color: stencilColor('color-textBase');
   background: transparent;
   border: 0;
+  border-radius: 50%;
   cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
 
   &:hover,
   &:focus-visible {
     color: stencilColor('color-primary');
+    background: rgba(0, 0, 0, 0.06);
   }
 
   &:focus-visible {
@@ -1459,8 +1508,23 @@ button.cs-ugc-vehicle-badge {
   width: 100%;
   padding: spacing('half');
   font-size: 1rem;
+  color: stencilColor('color-textBase');
+  background: stencilColor('color-white');
   border: 1px solid stencilColor('color-greyLight');
-  border-radius: 2px;
+  border-radius: spacing('half'); // matches the toolbar selects + button
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:focus {
+    outline: 0;
+    border-color: stencilColor('color-primary');
+    box-shadow: 0 0 4px stencilColor('color-primary');
+  }
+}
+
+// Textareas (review body, question body) keep the form's fixed width — only
+// vertical resize, so dragging can't pull them wider than the rest of the fields.
+textarea.cs-ugc-input {
+  resize: vertical;
 }
 
 .cs-ugc-input--file {
@@ -1532,6 +1596,8 @@ button.cs-ugc-vehicle-badge {
 }
 
 .cs-ugc-turnstile {
+  display: flex;
+  justify-content: center;
   min-height: 65px;
 }
 
@@ -1540,6 +1606,7 @@ button.cs-ugc-vehicle-badge {
   padding: spacing('half');
   color: stencilColor('color-white');
   background: stencilColor('color-error');
+  border-radius: spacing('half');
 
   &[hidden] {
     display: none;
@@ -1550,6 +1617,7 @@ button.cs-ugc-vehicle-badge {
   margin: 0;
   padding: spacing('single');
   background: stencilColor('color-greyLightest');
+  border-radius: spacing('half');
 
   &[hidden] {
     display: none;
@@ -1559,6 +1627,18 @@ button.cs-ugc-vehicle-badge {
 .cs-ugc-form-footer {
   display: flex;
   justify-content: flex-end;
+
+  // Full-width CTA on mobile reads more modern; sits right-aligned from medium up.
+  // Drop Foundation's default `.button` bottom margin — the dialog padding
+  // already provides the gap below the footer.
+  .button {
+    width: 100%;
+    margin-bottom: 0;
+
+    @include breakpoint('medium') {
+      width: auto;
+    }
+  }
 }
 
 // =============================================================================

@@ -22,8 +22,15 @@
     <div class="cs-ugc-modal" data-question-modal hidden>
         <div class="cs-ugc-modal-overlay" data-question-modal-close></div>
         <div class="cs-ugc-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="cs-question-modal-title">
-            <button type="button" class="cs-ugc-modal-close" data-question-modal-close aria-label="{{lang 'products.questions.submit.close'}}">&times;</button>
-            <h4 id="cs-question-modal-title">{{lang 'products.questions.submit.heading'}}</h4>
+            <button type="button" class="cs-ugc-modal-close" data-question-modal-close aria-label="{{lang 'products.questions.submit.close'}}">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            <header class="cs-ugc-modal-header">
+                <div class="cs-ugc-modal-heading">
+                    <h4 class="cs-ugc-modal-title" id="cs-question-modal-title">{{lang 'products.questions.submit.heading'}}</h4>
+                    <p class="cs-ugc-modal-subtitle">{{lang 'products.questions.submit.subheading'}}</p>
+                </div>
+            </header>
             <form class="cs-ugc-form" data-question-form novalidate>
                 <p class="cs-ugc-form-error" data-question-error role="alert" hidden></p>
                 <p class="cs-ugc-form-success" data-question-success hidden>{{lang 'products.questions.submit.success'}}</p>
