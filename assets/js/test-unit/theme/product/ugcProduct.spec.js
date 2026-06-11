@@ -3498,6 +3498,31 @@ describe('UgcProduct (#30 — review media display)', () => {
             document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
             expect(lightbox().hidden).toBe(true);
         });
+
+        it('navigates onto a video entry and renders it playable with its poster', async () => {
+            const r1 = reviewWith([photoMedia({ id: 1, medium_url: 'https://cdn.example/a.jpg' })], { id: 1, body: 'Body A' });
+            const r2 = reviewWith([videoMedia({ id: 2 })], { id: 2, body: 'Body B' });
+            const api = buildApi(okEnvelope({ items: [r1, r2], total: 2 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            grid().querySelector('[data-ugc-media-tile]').click(); // index 0 (photo)
+            lightbox().querySelector('[data-ugc-lightbox-next]').click(); // index 1 (video)
+
+            const video = lightboxContent().querySelector('video');
+            expect(video.getAttribute('src')).toEqual('https://cdn.example/ugc/media/u2/video.mp4');
+            expect(video.getAttribute('poster')).toEqual('https://cdn.example/ugc/media/u2/poster.jpg');
+        });
+
+        it('hides the arrows for a single-photo set even from an indexed band tile', async () => {
+            const api = buildApi(okEnvelope({ items: [reviewWith([photoMedia()])], total: 1 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            grid().querySelector('[data-ugc-media-tile]').click();
+            expect(lightbox().querySelector('[data-ugc-lightbox-prev]').hidden).toBe(true);
+            expect(lightbox().querySelector('[data-ugc-lightbox-next]').hidden).toBe(true);
+        });
     });
 
     describe('escaping', () => {

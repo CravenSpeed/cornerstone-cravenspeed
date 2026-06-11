@@ -2344,6 +2344,14 @@ export default class UgcProduct {
         }
 
         this.gridMedia = this.gridMedia.concat(this._collectGridMedia(items));
+
+        // If the lightbox is open on a navigable entry, the freshly appended
+        // media extends the set — refresh the arrow disabled state so a
+        // now-reachable neighbour isn't stranded until the next interaction.
+        if (this.lightboxElement && !this.lightboxElement.hidden && this.lightboxIndex >= 0) {
+            this._updateLightboxNav();
+        }
+
         return true;
     }
 

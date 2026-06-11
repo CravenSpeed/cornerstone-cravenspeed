@@ -422,6 +422,10 @@ export default class UgcOverview {
         content.innerHTML = this.buildLightboxMedia(review) + this.buildLightboxReview(review);
         content.scrollTop = 0;
 
+        // Overview arrows stay visible and only disable at the ends (a single
+        // filtered review disables both). This differs deliberately from the
+        // product lightbox, which hides its arrows for a single-photo set —
+        // here the review-stepping affordance reads better kept in place.
         const prev = this.lightbox.querySelector('[data-ugc-review-prev]');
         const next = this.lightbox.querySelector('[data-ugc-review-next]');
         prev.disabled = this.lightboxIndex <= 0;
@@ -544,6 +548,12 @@ export default class UgcOverview {
     destroy() {
         if (this.container) {
             this.container.removeEventListener('click', this.handleControlClick);
+        }
+
+        // Close first if open, so teardown stays symmetric: restores focus,
+        // removes the keydown listener, and clears the leaked lastFocused node.
+        if (this.lightbox && !this.lightbox.hidden) {
+            this.closeLightbox();
         }
 
         document.removeEventListener('keydown', this.handleLightboxKeydown);

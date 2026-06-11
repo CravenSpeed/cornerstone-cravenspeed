@@ -390,4 +390,34 @@ describe('UgcOverview review lightbox', () => {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
         expect(lightbox.hidden).toBe(true);
     });
+
+    it('renders a video review in the lightbox with its poster frame', async () => {
+        const reviews = makeReviews(1);
+        reviews[0].media = [{ type: 'video', url: 'https://cdn/v.mp4', poster_url: 'https://cdn/p.jpg' }];
+        await mountInit(reviews);
+
+        document.querySelector('[data-ugc-review-open]').click();
+        const video = document.querySelector('[data-ugc-overview-lightbox] video');
+        expect(video.getAttribute('src')).toBe('https://cdn/v.mp4');
+        expect(video.getAttribute('poster')).toBe('https://cdn/p.jpg');
+    });
+
+    it('navigates across page boundaries using absolute filtered indices', async () => {
+        // 15 reviews all carry media → page 1 shows 10, page 2 shows 5.
+        await mountInit(makeReviews(15, { withMediaEvery: 1 }));
+
+        document.querySelector('[data-ugc-page="2"]').click();
+        // Page-2 thumbs carry absolute indices 10..14.
+        document.querySelector('[data-ugc-review-open][data-ugc-index="10"]').click();
+        const lightbox = document.querySelector('[data-ugc-overview-lightbox]');
+        expect(lightbox.textContent).toContain('Body 11');
+
+        lightbox.querySelector('[data-ugc-review-next]').click();
+        expect(lightbox.textContent).toContain('Body 12');
+
+        // Stepping back crosses onto page 1's reviews — nav is page-independent.
+        lightbox.querySelector('[data-ugc-review-prev]').click();
+        lightbox.querySelector('[data-ugc-review-prev]').click();
+        expect(lightbox.textContent).toContain('Body 10');
+    });
 });
