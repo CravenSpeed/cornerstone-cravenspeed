@@ -42,13 +42,18 @@ export function generationFitmentId(node) {
  * Resolve the visitor's garage selection to its fitment identity from the search
  * JSON's `vehicle_registry`. The registry's `models` map is keyed by bare model
  * slug and each model's `generations` map by bare generation slug — the same
- * slugs the vehicle selector persists.
+ * slugs the vehicle selector persists; the `brands` map is keyed by make slug.
+ *
+ * The display `label` is composed "<make> <model>" (e.g. "MINI Cooper") from the
+ * brand and model display names. The generation node's own `name` is the
+ * generation-only label (e.g. "F56 2014 to 2024"), so it is intentionally NOT
+ * used here — naming the garage vehicle by make + model reads cleanly on the
+ * "For your <vehicle>" chip. Make/model names fall back to their slugs if absent.
  * @param {Object|null} registry - The `vehicle_registry` object.
  * @param {{make: string, model: string, generation: string}|null} garage
- * @returns {{fitment_id: (number|null), label: (string|null)}|null}
+ * @returns {{fitment_id: (number|null), label: string}|null}
  *   `null` when there is no garage selection or no matching registry path;
- *   otherwise `fitment_id` is `null` for an un-filterable (no-id) generation,
- *   and `label` falls back to the make/model/generation slug string.
+ *   otherwise `fitment_id` is `null` for an un-filterable (no-id) generation.
  */
 export function resolveGarageFitment(registry, garage) {
     if (!registry || !garage || !garage.make || !garage.model || !garage.generation) {
@@ -62,10 +67,14 @@ export function resolveGarageFitment(registry, garage) {
     const genNode = model.generations[garage.generation];
     if (!genNode) return null;
 
-    const label = generationLabel(genNode);
+    const brands = registry.brands || {};
+    const brandNode = brands[garage.make];
+    const makeName = (brandNode && brandNode.name) ? brandNode.name : garage.make;
+    const modelName = model.name || garage.model;
+
     return {
         fitment_id: generationFitmentId(genNode),
-        label: label || garage.generation,
+        label: `${makeName} ${modelName}`,
     };
 }
 

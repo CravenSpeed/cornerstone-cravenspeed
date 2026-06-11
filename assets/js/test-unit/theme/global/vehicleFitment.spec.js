@@ -53,14 +53,14 @@ describe('vehicleFitment', () => {
     });
 
     describe('resolveGarageFitment', () => {
-        it('resolves a complete garage selection to fitment_id + label', () => {
+        it('resolves a complete garage selection to fitment_id + a make/model label', () => {
             const result = resolveGarageFitment(registry, { make: 'mini', model: 'cooper', generation: 'cooperf56' });
-            expect(result).toEqual({ fitment_id: 87, label: 'MINI Cooper F56' });
+            expect(result).toEqual({ fitment_id: 87, label: 'MINI Cooper' });
         });
 
         it('returns null fitment_id (un-filterable) when the node has no id, label still resolves', () => {
             const result = resolveGarageFitment(registry, { make: 'mini', model: 'cooper', generation: 'coopernoid' });
-            expect(result).toEqual({ fitment_id: null, label: 'MINI Cooper (unmapped)' });
+            expect(result).toEqual({ fitment_id: null, label: 'MINI Cooper' });
         });
 
         it('returns null for an incomplete garage selection', () => {
@@ -77,10 +77,10 @@ describe('vehicleFitment', () => {
             expect(resolveGarageFitment(null, { make: 'mini', model: 'cooper', generation: 'cooperf56' })).toBeNull();
         });
 
-        it('falls back to the generation slug as label when the node carries no name', () => {
+        it('falls back to make/model slugs for the label when brand/model names are absent', () => {
             const noName = { models: { cooper: { generations: { cooperf56: { fitment_id: 87 } } } } };
             const result = resolveGarageFitment(noName, { make: 'mini', model: 'cooper', generation: 'cooperf56' });
-            expect(result).toEqual({ fitment_id: 87, label: 'cooperf56' });
+            expect(result).toEqual({ fitment_id: 87, label: 'mini cooper' });
         });
     });
 

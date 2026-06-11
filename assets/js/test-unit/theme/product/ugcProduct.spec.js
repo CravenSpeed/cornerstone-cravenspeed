@@ -27,10 +27,15 @@ const buildStateManager = () => {
 };
 
 // Minimal GlobalStateManager stub: holds a vehicle.selected + a search registry
-// and lets a test emit a new global snapshot. `registry.models[model]
-// .generations[generation]` mirrors the search-JSON shape resolveGarageFitment
-// reads (object generation node `{ name, fitment_id }`, SRS §3.1.4 Pass 27).
+// and lets a test emit a new global snapshot. Mirrors the live search-JSON shape
+// resolveGarageFitment reads: a `brands` map keyed by make slug, a `models` map
+// keyed by model slug, and object generation nodes `{ name, fitment_id }`
+// (SRS §3.1.4 Pass 27). The chip names the garage vehicle by make + model
+// ("MINI Cooper"), composed from the brand/model display names.
 const F56_REGISTRY = {
+    brands: {
+        mini: { name: 'MINI', models: ['cooper'] },
+    },
     models: {
         cooper: {
             name: 'Cooper',
@@ -844,7 +849,7 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
         const chip = document.querySelector('[data-questions-fitment-chip]');
         const toggle = chip.querySelector('[data-fitment-chip-toggle]');
         expect(toggle).not.toBeNull();
-        expect(toggle.textContent).toContain('For your MINI Cooper F56');
+        expect(toggle.textContent).toContain('For your MINI Cooper');
         expect(chip.style.visibility).toBe('visible');
     });
 
@@ -966,7 +971,7 @@ describe('UgcProduct (slice A — fitment filter chip, reviews)', () => {
         const chip = reviewsChip();
         const toggle = chip.querySelector('[data-fitment-chip-toggle]');
         expect(toggle).not.toBeNull();
-        expect(toggle.textContent).toContain('For your MINI Cooper F56');
+        expect(toggle.textContent).toContain('For your MINI Cooper');
         expect(chip.querySelector('.cs-fitment-chip-count').textContent).toBe('7');
         expect(chip.style.visibility).toBe('visible');
     });
