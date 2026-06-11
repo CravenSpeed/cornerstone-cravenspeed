@@ -213,7 +213,7 @@
 .cs-ugc-overview-thumb {
   position: relative;
   width: 100%;
-  padding-top: 100%;
+  padding: 100% 0 0; // square aspect via padding box; zeroes a button's UA padding
   background-color: stencilColor('color-greyLightest');
 
   img {
@@ -228,6 +228,29 @@
   &.is-empty {
     padding-top: 0;
     min-height: spacing('double');
+  }
+}
+
+// A media review's thumb is a button that opens the review lightbox. Reset the
+// button chrome and add a subtle zoom + focus affordance to signal it's clickable.
+button.cs-ugc-overview-thumb {
+  display: block;
+  overflow: hidden;
+  border: 0;
+  cursor: pointer;
+
+  img {
+    transition: transform 0.2s ease;
+  }
+
+  &:hover img,
+  &:focus-visible img {
+    transform: scale(1.05);
+  }
+
+  &:focus-visible {
+    outline: 2px solid stencilColor('color-primary');
+    outline-offset: -2px;
   }
 }
 
@@ -327,4 +350,55 @@
 .cs-ugc-overview-page-status {
   font-size: 0.875rem;
   color: stencilColor('color-textSecondary');
+}
+
+// =============================================================================
+// Overview review lightbox: click a wall photo to open that review large, with
+// prev/next arrows stepping through the filtered set. Reuses the .cs-ugc-modal
+// shell + .cs-ugc-lightbox-* media styling from _cs-product.scss.
+// =============================================================================
+.cs-ugc-overview-lightbox {
+  align-items: center;
+}
+
+.cs-ugc-overview-lightbox-content {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('single');
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+
+  // Reserve side gutters so the floating prev/next arrows never overlap the
+  // content — most visible on a text-only review, where there is no image for
+  // the arrows to sit over (2.5rem arrow + its edge offset).
+  padding: 0 2.75rem;
+}
+
+.cs-ugc-overview-lightbox-media {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('half');
+  width: 100%;
+}
+
+.cs-ugc-overview-lightbox-media img,
+.cs-ugc-overview-lightbox-media video {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+}
+
+.cs-ugc-overview-lightbox-review {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('quarter');
+  width: 100%;
+  text-align: left;
+}
+
+.cs-ugc-overview-lightbox-title {
+  margin: 0;
+  font-size: 1.125rem;
 }

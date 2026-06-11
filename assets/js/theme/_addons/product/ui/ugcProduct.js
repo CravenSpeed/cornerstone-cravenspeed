@@ -365,6 +365,10 @@ export default class UgcProduct {
         this.lightboxElement = document.querySelector('[data-ugc-lightbox]');
         this.galleryModalElement = document.querySelector('[data-ugc-gallery]');
         this.gridMedia = [];
+        // Index of the gridMedia entry the lightbox is showing, so prev/next can
+        // step through the customer-photo set. -1 when the lightbox was opened
+        // from a per-review strip tile (no index → no navigation).
+        this.lightboxIndex = -1;
         this.galleryRequested = false;
         this.galleryLoading = false;
         this.galleryExhausted = false;
@@ -414,6 +418,7 @@ export default class UgcProduct {
         this.onQuestionOpenClick = this.onQuestionOpenClick.bind(this);
         this.onMediaTileClick = this.onMediaTileClick.bind(this);
         this.onLightboxClick = this.onLightboxClick.bind(this);
+        this.onLightboxKeydown = this.onLightboxKeydown.bind(this);
         this.onGalleryModalClick = this.onGalleryModalClick.bind(this);
         this.onFitmentChipClick = this.onFitmentChipClick.bind(this);
         this.onVehicleBadgeClick = this.onVehicleBadgeClick.bind(this);
@@ -2339,6 +2344,14 @@ export default class UgcProduct {
         }
 
         this.gridMedia = this.gridMedia.concat(this._collectGridMedia(items));
+
+        // If the lightbox is open on a navigable entry, the freshly appended
+        // media extends the set — refresh the arrow disabled state so a
+        // now-reachable neighbour isn't stranded until the next interaction.
+        if (this.lightboxElement && !this.lightboxElement.hidden && this.lightboxIndex >= 0) {
+            this._updateLightboxNav();
+        }
+
         return true;
     }
 
@@ -2601,6 +2614,37 @@ export default class UgcProduct {
     onLightboxClick(event) {
         if (event.target.closest('[data-ugc-lightbox-close]')) {
             this.closeLightbox();
+            return;
+        }
+
+        if (event.target.closest('[data-ugc-lightbox-prev]')) {
+            this._navLightbox(-1);
+            return;
+        }
+
+        if (event.target.closest('[data-ugc-lightbox-next]')) {
+            this._navLightbox(1);
+        }
+    }
+
+    /**
+     * Keyboard navigation while the lightbox is open: arrows step the photo
+     * set, Escape closes. Bound on open, removed on close.
+     * @param {KeyboardEvent} event
+     */
+    onLightboxKeydown(event) {
+        switch (event.key) {
+        case 'Escape':
+            this.closeLightbox();
+            break;
+        case 'ArrowLeft':
+            this._navLightbox(-1);
+            break;
+        case 'ArrowRight':
+            this._navLightbox(1);
+            break;
+        default:
+            break;
         }
     }
 
@@ -2711,18 +2755,110 @@ export default class UgcProduct {
         }
 
         // Band and gallery-modal tiles carry their gridMedia index — show the
-        // full owning review under the media. Per-review strip tiles don't
-        // (their review is already on screen).
+        // full owning review under the media, and enable prev/next to step the
+        // photo set. Per-review strip tiles don't (their review is already on
+        // screen), so they stay media-only with no arrows.
         let review = '';
-        const entry = dataset.ugcMediaIndex === undefined
-            ? null
-            : this.gridMedia[parseInt(dataset.ugcMediaIndex, 10)];
+        const index = dataset.ugcMediaIndex === undefined
+            ? -1
+            : parseInt(dataset.ugcMediaIndex, 10);
+        const entry = index >= 0 ? this.gridMedia[index] : null;
         if (entry && entry.review) {
             review = `<div class="cs-ugc-lightbox-review">${this._buildReview(entry.review, false, false)}</div>`;
         }
 
         content.innerHTML = media + review;
+        this.lightboxIndex = entry ? index : -1;
+        this._updateLightboxNav();
         this.lightboxElement.hidden = false;
+        document.addEventListener('keydown', this.onLightboxKeydown);
+    }
+
+    /**
+     * Re-render the lightbox at another gridMedia entry (prev/next navigation):
+     * its media plus the full owning review, mirroring an indexed-tile open.
+     * @param {number} index - The target gridMedia index.
+     */
+    _renderLightboxEntry(index) {
+        const content = this.lightboxElement
+            ? this.lightboxElement.querySelector('[data-ugc-lightbox-content]')
+            : null;
+        const entry = this.gridMedia[index];
+        if (!content || !entry) {
+            return;
+        }
+
+        this.lightboxIndex = index;
+        const review = `<div class="cs-ugc-lightbox-review">${this._buildReview(entry.review, false, false)}</div>`;
+        content.innerHTML = this._buildLightboxMedia(entry.media, entry.review.author) + review;
+        this._updateLightboxNav();
+    }
+
+    /**
+     * Build the large lightbox media markup from a §3.2.1 media object (photo →
+     * medium/url, video → url + poster). Mirrors the open-from-dataset path so
+     * navigated and clicked media render identically.
+     * @param {Object} media
+     * @param {string} [author] - Owning review author, for the label.
+     * @returns {string}
+     */
+    _buildLightboxMedia(media, author) {
+        const source = author ? `${author}'s review` : 'a customer review';
+
+        if (media.type === 'video') {
+            const src = this._escapeAttr(media.url || '');
+            const poster = media.poster_url ? ` poster="${this._escapeAttr(media.poster_url)}"` : '';
+            const label = this._escapeAttr(`Video from ${source}`);
+            return `<video class="cs-ugc-lightbox-video" src="${src}"${poster} controls autoplay playsinline aria-label="${label}"></video>`;
+        }
+
+        const src = this._escapeAttr(media.medium_url || media.url || '');
+        const label = this._escapeAttr(`Photo from ${source}`);
+        return `<img class="cs-ugc-lightbox-img" src="${src}" alt="${label}">`;
+    }
+
+    /**
+     * Step the lightbox by delta through the gridMedia photo set, clamped to its
+     * ends. No-op when the current view isn't navigable (per-review strip open).
+     * @param {number} delta
+     */
+    _navLightbox(delta) {
+        if (this.lightboxIndex < 0) {
+            return;
+        }
+
+        const target = this.lightboxIndex + delta;
+        if (target < 0 || target >= this.gridMedia.length) {
+            return;
+        }
+
+        this._renderLightboxEntry(target);
+    }
+
+    /**
+     * Show/hide the prev/next arrows and set their disabled state for the
+     * current position. Arrows appear only for a navigable entry with more than
+     * one photo in the set.
+     */
+    _updateLightboxNav() {
+        if (!this.lightboxElement) {
+            return;
+        }
+
+        const prev = this.lightboxElement.querySelector('[data-ugc-lightbox-prev]');
+        const next = this.lightboxElement.querySelector('[data-ugc-lightbox-next]');
+        if (!prev || !next) {
+            return;
+        }
+
+        const navigable = this.lightboxIndex >= 0 && this.gridMedia.length > 1;
+        prev.hidden = !navigable;
+        next.hidden = !navigable;
+
+        if (navigable) {
+            prev.disabled = this.lightboxIndex <= 0;
+            next.disabled = this.lightboxIndex >= this.gridMedia.length - 1;
+        }
     }
 
     /**
@@ -2740,6 +2876,8 @@ export default class UgcProduct {
         }
 
         this.lightboxElement.hidden = true;
+        this.lightboxIndex = -1;
+        document.removeEventListener('keydown', this.onLightboxKeydown);
     }
 
     renderError() {
@@ -2968,6 +3106,8 @@ export default class UgcProduct {
         if (this.lightboxElement) {
             this.lightboxElement.removeEventListener('click', this.onLightboxClick);
         }
+
+        document.removeEventListener('keydown', this.onLightboxKeydown);
 
         if (this.galleryModalElement) {
             this.galleryModalElement.removeEventListener('click', this.onGalleryModalClick);
