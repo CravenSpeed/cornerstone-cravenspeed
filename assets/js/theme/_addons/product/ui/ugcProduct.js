@@ -613,6 +613,20 @@ export default class UgcProduct {
     }
 
     /**
+     * Resolve a `fitment_id` to its full canonical `vehicle_label` from this
+     * archetype's `make_model_index` (cs-ugc #209). Unlike the global registry,
+     * the archetype index is make-namespaced, so a model slug shared across two
+     * makes (Mazda 3 vs Polestar 3, etc.) resolves to the correct make. Returns
+     * '' when the fitment isn't one of this archetype's fitments.
+     * @param {number} fitmentId
+     * @returns {string}
+     */
+    _labelFromArchetype(fitmentId) {
+        const match = this.archetypeFitments.find(f => f.fitment_id === fitmentId);
+        return match ? match.label : '';
+    }
+
+    /**
      * Paint the vehicle section for a submission modal, tailored to the reviewer's
      * scenario (SRS §3.4.1, issue #41). There is no free-text input and no
      * append/opt-in checkbox:
@@ -640,7 +654,14 @@ export default class UgcProduct {
         }
 
         if (kind === 'review' && this.verifiedFitmentId !== null) {
-            const label = fitmentIdToLabel(this._registry(), this.verifiedFitmentId);
+            // Resolve the token's fitment from the archetype's make_model_index
+            // first (make-namespaced), not the global registry — the registry's
+            // models map is keyed by bare model slug, so for the handful of model
+            // names shared across two makes (e.g. Mazda 3 vs Polestar 3) it can
+            // resolve the wrong make (cs-ugc #209). The registry stays a fallback
+            // for the edge where the token's fitment isn't in this archetype.
+            const label = this._labelFromArchetype(this.verifiedFitmentId)
+                || fitmentIdToLabel(this._registry(), this.verifiedFitmentId);
             if (label) {
                 // Fully silent: no UI, attach on submit (SRS §3.4.1, issue #41).
                 this.verifiedSilentVehicle = {

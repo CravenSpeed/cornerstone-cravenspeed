@@ -2164,7 +2164,7 @@ describe('UgcProduct (#41 — tailored vehicle field by scenario, SRS §3.4.1)',
             expect(container.querySelector('[data-vehicle-append]')).toBeNull();
         });
 
-        it('silently attaches the token fitment_id + full canonical label resolved from the registry', async () => {
+        it('silently attaches the token fitment_id + full canonical label resolved from make_model_index', async () => {
             const global = buildGlobalStateManager({ registry: F56_REGISTRY });
             window.history.replaceState({}, '', '/products/x?ugc_token=abc123');
             const api = buildSubmitApi();
@@ -2180,6 +2180,50 @@ describe('UgcProduct (#41 — tailored vehicle field by scenario, SRS §3.4.1)',
             expect(payload.fitment_id).toBe(87);
             expect(payload.vehicle_label).toBe('MINI Cooper F56 2014 to 2024');
             expect(payload.ugc_token).toBe('abc123');
+        });
+
+        it('resolves the verified label from make_model_index (correct make) when the registry slug collides (#209)', async () => {
+            // The registry's "3" slug is shared by two makes; makeNameForModel
+            // returns the first brand listing it (Polestar here), so the registry
+            // alone would mislabel a Mazda 3 fitment. The archetype make_model_index
+            // is make-namespaced, so resolving from it yields the correct make.
+            const collidedRegistry = {
+                brands: {
+                    polestar: { name: 'Polestar', models: ['3'] },
+                    mazda: { name: 'Mazda', models: ['3'] },
+                },
+                models: {
+                    3: { name: '3', generations: { shared: { name: 'gen', fitment_id: 555 } } },
+                },
+            };
+            const mazda3Archetype = {
+                make_model_index: {
+                    mazda: {
+                        name: 'Mazda',
+                        models: {
+                            mazda3: {
+                                name: '3',
+                                generations: { mazda34th: { name: '4th gen BP 2019 to 2026', fitment_id: 555 } },
+                            },
+                        },
+                    },
+                },
+            };
+            const global = buildGlobalStateManager({ registry: collidedRegistry });
+            window.history.replaceState({}, '', '/products/mazda-3?ugc_token=tok');
+            const api = buildSubmitApi({ ok: true, status: 200, data: { archetype_id: ARCHETYPE_ID, alias_id: 1, fitment_id: 555 } });
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global, mazda3Archetype);
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            fillReview('review');
+            submitForm('review');
+            await flush();
+
+            const payload = api.postReview.mock.calls[0][0];
+            expect(payload.fitment_id).toBe(555);
+            expect(payload.vehicle_label).toBe('Mazda 3 4th gen BP 2019 to 2026');
+            expect(payload.vehicle_label).not.toContain('Polestar');
         });
 
         it('falls back to the waterfall when the token carries no fitment_id', async () => {
