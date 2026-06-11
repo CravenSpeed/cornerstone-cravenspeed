@@ -372,10 +372,11 @@ export default class UgcProduct {
         this.questionModalElement = document.querySelector('[data-question-modal]');
         this.questionFormElement = document.querySelector('[data-question-form]');
 
-        // Structured-vehicle section containers (SRS §3.4.1, Slice B), one per
-        // modal. Populated on open by _renderVehicleSection — the verified
-        // pre-checked option or the archetype-constrained dropdown. Reserved in
-        // SCSS so the async paint never shifts the form.
+        // Structured-vehicle section containers (SRS §3.4.1, issue #41), one per
+        // modal. Populated on open by _renderVehicleSection — empty for the
+        // verified reviewer (silent token attach) or the archetype-constrained
+        // make → model → generation waterfall otherwise. Reserved in SCSS so the
+        // async paint never shifts the form.
         this.reviewVehicleElement = this.reviewFormElement
             ? this.reviewFormElement.querySelector('[data-review-vehicle]')
             : null;
@@ -1186,10 +1187,11 @@ export default class UgcProduct {
         if (result.ok) {
             this.verifiedPurchaserToken = token;
 
-            // The token's authoritative fitment (SRS §3.2.8) drives the verified
-            // reviewer's pre-checked "Add your <vehicle>" option (§3.4.1). null
-            // when the purchased alias had no resolvable fitment — then the
-            // verified reviewer falls through to the dropdown path.
+            // The token's authoritative fitment (SRS §3.2.8) is attached
+            // silently for the verified reviewer — no vehicle UI is shown
+            // (§3.4.1, issue #41). null when the purchased alias had no
+            // resolvable fitment — then the verified reviewer falls through
+            // to the waterfall path.
             const data = result.data || {};
             const fitmentId = parseInt(data.fitment_id, 10);
             this.verifiedFitmentId = (!Number.isNaN(fitmentId) && fitmentId > 0)

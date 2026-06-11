@@ -27,6 +27,8 @@ $cs-modal-media-width: 220px;
 $cs-button-height: 50px;
 // Active fitment-chip accent — literal (no matching stencil token); ~5.1:1 on #fff.
 $cs-fitment-active: #06c;
+// Darker shade for the active chip's hover state.
+$cs-fitment-active-hover: #05a;
 
 @mixin shimmer {
   background: #e0e0e0;
@@ -848,7 +850,7 @@ $cs-fitment-active: #06c;
   display: inline-flex;
   align-items: center;
   gap: spacing('half');
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 spacing('half');
   border: 1px solid stencilColor('color-textSecondary');
   border-radius: 999px;
@@ -858,6 +860,12 @@ $cs-fitment-active: #06c;
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    border-color: stencilColor('color-textBase');
+    background: rgba(0, 0, 0, 0.04);
+  }
 
   &.is-active {
     border-color: $cs-fitment-active;
@@ -867,6 +875,11 @@ $cs-fitment-active: #06c;
     .cs-fitment-chip-count {
       background: #fff;
       color: $cs-fitment-active;
+    }
+
+    &:hover {
+      border-color: $cs-fitment-active-hover;
+      background: $cs-fitment-active-hover;
     }
   }
 
@@ -893,8 +906,8 @@ $cs-fitment-active: #06c;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 50%;
   background: transparent;
@@ -902,6 +915,12 @@ $cs-fitment-active: #06c;
   font-size: 1.25rem;
   line-height: 1;
   cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: stencilColor('color-textBase');
+  }
 
   &:focus-visible {
     outline: 2px solid stencilColor('color-primary');
@@ -1013,14 +1032,17 @@ $cs-fitment-active: #06c;
   margin: spacing('quarter') 0;
 }
 
-.cs-review-meta {
+// Card-scoped so these paragraph margins outrank the product-container reset
+// (`.cs-product-container p { margin: 0 }`, ~L83) — the reviews/Q&A tabs render
+// inside that container, which would otherwise zero the card's vertical rhythm.
+.cs-review .cs-review-meta {
   display: flex;
   flex-wrap: wrap;
   gap: spacing('half');
   align-items: center;
   color: stencilColor('color-greyDark');
   font-size: 0.875rem;
-  margin: 0 0 spacing('half');
+  margin: 0 0 spacing('quarter');
 }
 
 .cs-review-author {
@@ -1060,12 +1082,18 @@ $cs-fitment-active: #06c;
 // cards, question cards, and the home overview wall — the review's
 // system-generated `vehicle_label` (e.g. 'MINI Cooper F56'), display-only.
 // Absent entirely when the item has no vehicle, so no space is reserved.
-.cs-ugc-vehicle-badge {
+// The second selector re-asserts the box model past the `.cs-product-container
+// p { margin: 0; padding: 0 }` reset (~L83), which would otherwise strip the
+// padding off the review/question cards' <p> badges (the home wall is outside
+// that container, so the bare class is enough there).
+.cs-ugc-vehicle-badge,
+.cs-product-container .cs-ugc-vehicle-badge {
   display: inline-block;
   max-width: 100%;
-  padding: 0.125rem spacing('half');
-  border: 1px solid stencilColor('color-textSecondary');
-  border-radius: 999px;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: $cs-fitment-active;
+  color: #fff;
   overflow: hidden;
   font-size: 0.8125rem;
   font-weight: 600;
@@ -1074,7 +1102,7 @@ $cs-fitment-active: #06c;
   text-overflow: ellipsis;
 }
 
-.cs-review-vehicle {
+.cs-review .cs-review-vehicle {
   margin: 0 0 spacing('half');
 }
 
@@ -1182,14 +1210,14 @@ $cs-fitment-active: #06c;
   border-bottom: 1px solid stencilColor('color-greyLightest');
 }
 
-.cs-question-meta {
+.cs-question .cs-question-meta {
   display: flex;
   flex-wrap: wrap;
   gap: spacing('half');
   align-items: center;
   color: stencilColor('color-textSecondary');
   font-size: 0.875rem;
-  margin: 0 0 spacing('half');
+  margin: 0 0 spacing('quarter');
 }
 
 .cs-question-author {
@@ -1201,7 +1229,7 @@ $cs-fitment-active: #06c;
   color: stencilColor('color-textSecondary');
 }
 
-.cs-question-vehicle {
+.cs-question .cs-question-vehicle {
   margin: 0 0 spacing('half');
 }
 
