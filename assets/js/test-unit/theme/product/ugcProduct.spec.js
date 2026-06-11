@@ -873,7 +873,7 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
         expect(qParamsOfCall(api, 3).fitment_only).toBeNull();
     });
 
-    it('hides the Q&A chip when fitment_question_count is 0 (universal / no match)', async () => {
+    it('shows a "no questions for your vehicle" status when fitment_question_count is 0', async () => {
         const api = buildQaApi(okQuestions({ fitment_question_count: 0 }));
         const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
 
@@ -881,8 +881,12 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
         await flush();
 
         const chip = document.querySelector('[data-questions-fitment-chip]');
-        expect(chip.innerHTML).toBe('');
-        expect(chip.style.visibility).toBe('hidden');
+        const empty = chip.querySelector('.cs-fitment-empty');
+        expect(empty).not.toBeNull();
+        expect(empty.textContent).toContain('No questions');
+        expect(empty.textContent).toContain('MINI Cooper');
+        expect(chip.querySelector('[data-fitment-chip-toggle]')).toBeNull();
+        expect(chip.style.visibility).toBe('visible');
     });
 
     it('does not fetch questions when the Q&A DOM is absent', async () => {
@@ -976,15 +980,19 @@ describe('UgcProduct (slice A — fitment filter chip, reviews)', () => {
         expect(chip.style.visibility).toBe('visible');
     });
 
-    it('hides the chip when fitment_review_count is 0 (universal / no match)', async () => {
+    it('shows a "no reviews for your vehicle" status when fitment_review_count is 0', async () => {
         const api = buildReviewsApi(0);
         const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
         new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
         await flush();
 
         const chip = reviewsChip();
-        expect(chip.innerHTML).toBe('');
-        expect(chip.style.visibility).toBe('hidden');
+        const empty = chip.querySelector('.cs-fitment-empty');
+        expect(empty).not.toBeNull();
+        expect(empty.textContent).toContain('No reviews');
+        expect(empty.textContent).toContain('MINI Cooper');
+        expect(chip.querySelector('[data-fitment-chip-toggle]')).toBeNull();
+        expect(chip.style.visibility).toBe('visible');
     });
 
     it('hard-filters with fitment_only=true on chip click and resets to page 1', async () => {
@@ -1365,6 +1373,136 @@ describe('UgcProduct (issue #45 — click a vehicle badge to filter)', () => {
             expect(last.page).toBe(1);
             expect(document.querySelector('[data-questions-fitment-chip] .cs-fitment-showing')).not.toBeNull();
         });
+    });
+});
+
+describe('UgcProduct (vehicle-filter prompt when no vehicle is selected)', () => {
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    const reviewsChip = () => document.querySelector('[data-reviews-fitment-chip]');
+
+    const buildReviewsApi = (count = 0) => ({
+        getReviews: jest.fn(() => Promise.resolve(okEnvelope({ fitment_review_count: count }))),
+    });
+
+    const ARCH_WITH_FITMENTS = {
+        make_model_index: {
+            mini: {
+                name: 'MINI',
+                models: {
+                    cooper: {
+                        name: 'Cooper',
+                        generations: { f56: { name: 'F56 2014 to 2024', fitment_id: 87 } },
+                    },
+                },
+            },
+        },
+    };
+
+    it('shows the "select your vehicle" prompt on a fitment-capable product with no garage vehicle', async () => {
+        mountScaffold();
+        const global = buildGlobalStateManager({ registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildReviewsApi(0), undefined, global, ARCH_WITH_FITMENTS);
+        await flush();
+
+        const prompt = reviewsChip().querySelector('[data-fitment-prompt]');
+        expect(prompt).not.toBeNull();
+        expect(prompt.textContent).toContain('Select your vehicle');
+        expect(reviewsChip().style.visibility).toBe('visible');
+    });
+
+    it('shows no prompt on a universal product (no archetype fitments)', async () => {
+        mountScaffold();
+        const global = buildGlobalStateManager({ registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildReviewsApi(0), undefined, global, { universal_product: true });
+        await flush();
+
+        expect(reviewsChip().querySelector('[data-fitment-prompt]')).toBeNull();
+        expect(reviewsChip().style.visibility).toBe('hidden');
+    });
+
+    it('replaces the prompt with the live chip once a vehicle resolves', async () => {
+        mountScaffold();
+        const global = buildGlobalStateManager({ registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildReviewsApi(4), undefined, global, ARCH_WITH_FITMENTS);
+        await flush();
+        expect(reviewsChip().querySelector('[data-fitment-prompt]')).not.toBeNull();
+
+        global._set({
+            vehicle: { selected: F56_GARAGE },
+            search: { data: { vehicle_registry: F56_REGISTRY } },
+        });
+        await flush();
+
+        expect(reviewsChip().querySelector('[data-fitment-prompt]')).toBeNull();
+        expect(reviewsChip().querySelector('[data-fitment-chip-toggle]')).not.toBeNull();
+    });
+
+    it('scrolls to and focuses the make picker when the prompt is clicked', async () => {
+        mountScaffold();
+        const makeSelect = document.createElement('select');
+        makeSelect.setAttribute('data-product-option', 'make');
+        makeSelect.innerHTML = '<option>MINI</option>';
+        document.body.appendChild(makeSelect);
+        const scrollSpy = jest.fn();
+        makeSelect.scrollIntoView = scrollSpy;
+
+        const global = buildGlobalStateManager({ registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildReviewsApi(0), undefined, global, ARCH_WITH_FITMENTS);
+        await flush();
+
+        reviewsChip().querySelector('[data-fitment-prompt]').click();
+
+        expect(scrollSpy).toHaveBeenCalled();
+        expect(document.activeElement).toBe(makeSelect);
+    });
+});
+
+describe('UgcProduct (country flag on review cards)', () => {
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    const buildUgc = () => {
+        mountScaffold();
+        return new UgcProduct(
+            ARCHETYPE_ID,
+            buildStateManager(),
+            { getReviews: jest.fn(() => Promise.resolve(okEnvelope())) },
+        );
+    };
+
+    const review = over => ({
+        author: 'Jane D.', rating: 5, title: 't', body: 'b', ...over,
+    });
+
+    it('renders a lazy-loaded flag from the ISO-3166 alpha-2 country code', async () => {
+        const ugc = buildUgc();
+        await flush();
+
+        const html = ugc._buildReview(review({ country: 'US' }));
+        expect(html).toContain('class="cs-review-flag"');
+        expect(html).toContain('src="https://flagcdn.com/us.svg"');
+        expect(html).toContain('alt="US"');
+        expect(html).toContain('loading="lazy"');
+    });
+
+    it('omits the flag when country is null', async () => {
+        const ugc = buildUgc();
+        await flush();
+
+        expect(ugc._buildReview(review({ country: null }))).not.toContain('cs-review-flag');
+    });
+
+    it('omits the flag for a value that is not a two-letter code', async () => {
+        const ugc = buildUgc();
+        await flush();
+
+        expect(ugc._buildReview(review({ country: 'USA' }))).not.toContain('cs-review-flag');
+        expect(ugc._buildReview(review({ country: '12' }))).not.toContain('cs-review-flag');
+        expect(ugc._buildReview(review({ country: '' }))).not.toContain('cs-review-flag');
     });
 });
 
@@ -2277,6 +2415,57 @@ describe('UgcProduct (slice 6f — verified-purchaser token capture)', () => {
             await flush();
 
             expect(api.postReview.mock.calls[0][0]).not.toHaveProperty('ugc_token');
+        });
+    });
+
+    describe('auto-open from the tokenized email link', () => {
+        const reviewModal = () => document.querySelector('[data-review-modal]');
+
+        it('opens the review submission modal when landing with a valid token', async () => {
+            setUrl('?ugc_token=abc123');
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildTokenApi());
+            await flush();
+
+            expect(reviewModal().hidden).toBe(false);
+        });
+
+        it('still opens the modal when the token is invalid/expired (unverified)', async () => {
+            setUrl('?ugc_token=expired');
+            const api = buildTokenApi({ validateResult: { ok: false, status: 400, error: 'Invalid' } });
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(reviewModal().hidden).toBe(false);
+        });
+
+        it('leaves the modal closed when no token is present', async () => {
+            setUrl('');
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildTokenApi());
+            await flush();
+
+            expect(reviewModal().hidden).toBe(true);
+        });
+
+        it('activates the reviews tab when the tab strip is present', async () => {
+            setUrl('?ugc_token=abc123');
+            const tabs = document.createElement('ul');
+            tabs.className = 'tabs';
+            tabs.innerHTML = '<li class="tab"><a class="tab-title" href="#tab-reviews">Reviews</a></li>';
+            document.body.appendChild(tabs);
+            // preventDefault mirrors Foundation's tab handler and stops jsdom
+            // from logging a not-implemented navigation on the hash link.
+            const tabClick = jest.fn(event => event.preventDefault());
+            document.querySelector('ul.tabs a[href="#tab-reviews"]').addEventListener('click', tabClick);
+
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildTokenApi());
+            await flush();
+
+            expect(tabClick).toHaveBeenCalled();
+            expect(reviewModal().hidden).toBe(false);
         });
     });
 });
