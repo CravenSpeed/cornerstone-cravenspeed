@@ -79,26 +79,58 @@ export function resolveGarageFitment(registry, garage) {
 }
 
 /**
- * Resolve a `fitment_id` to its display label by scanning the registry's
- * generation nodes. Used to render a vehicle label when only the id is known
- * (e.g. a verified token's fitment, or a card badge fallback).
+ * Find the make (brand) display name for a model slug by reverse-lookup over the
+ * registry's `brands` map: each brand's `models` array lists the model slugs it
+ * owns. Returns the brand's `name`, or `null` when no brand claims the model.
+ * @param {Object} registry - The `vehicle_registry` object.
+ * @param {string} modelSlug
+ * @returns {string|null}
+ */
+function makeNameForModel(registry, modelSlug) {
+    const brands = registry.brands || {};
+    const makeSlugs = Object.keys(brands);
+    for (let i = 0; i < makeSlugs.length; i += 1) {
+        const brand = brands[makeSlugs[i]];
+        const models = brand && brand.models;
+        if (Array.isArray(models) && models.indexOf(modelSlug) !== -1) {
+            return brand.name || makeSlugs[i];
+        }
+    }
+    return null;
+}
+
+/**
+ * Resolve a `fitment_id` to its FULL CANONICAL display label (SRS §3.2.4,
+ * Pass 35) by scanning the registry's generation nodes. The generation node's
+ * own `name` is the generation-with-years segment only (e.g. "F56 2014 to
+ * 2024"); the full label prepends the make and model display names — make from
+ * the brand reverse-lookup, model from the owning `models[slug].name` — joined
+ * by single spaces, empty parts dropped. Used by the verified silent-attach to
+ * resolve the token fitment's submitted label.
  * @param {Object|null} registry - The `vehicle_registry` object.
  * @param {number|null} fitmentId
- * @returns {string|null} The matching generation's label, or `null`.
+ * @returns {string|null} The full canonical "make model generation-with-years"
+ *   label, or `null` when no generation node carries the id.
  */
 export function fitmentIdToLabel(registry, fitmentId) {
     if (!registry || !registry.models || typeof fitmentId !== 'number') return null;
 
     const modelSlugs = Object.keys(registry.models);
     for (let i = 0; i < modelSlugs.length; i += 1) {
-        const model = registry.models[modelSlugs[i]];
+        const modelSlug = modelSlugs[i];
+        const model = registry.models[modelSlug];
         const generations = model && model.generations;
         if (generations) {
             const genSlugs = Object.keys(generations);
             for (let j = 0; j < genSlugs.length; j += 1) {
                 const node = generations[genSlugs[j]];
                 if (generationFitmentId(node) === fitmentId) {
-                    return generationLabel(node);
+                    const makeName = makeNameForModel(registry, modelSlug);
+                    const modelName = model.name || modelSlug;
+                    const genName = generationLabel(node);
+                    return [makeName, modelName, genName]
+                        .filter(part => part)
+                        .join(' ');
                 }
             }
         }
@@ -170,4 +202,72 @@ export function buildArchetypeFitmentList(archetypeData) {
     }
 
     return list;
+}
+
+/**
+ * Group the flat `buildArchetypeFitmentList` output into a make → model →
+ * generation tree that drives the submission modal's cascading waterfall
+ * (SRS §3.4.1, issue #41 — mirrors the add-to-cart vehicle selector). Each tier
+ * preserves first-seen order from the flat list; makes and models are sorted by
+ * display label, generations by label descending (newest year range first) so
+ * the cascade can auto-select the newest generation like the add-to-cart picker.
+ *
+ * Shape:
+ *   [{ slug, label, models: [{ slug, label, generations: [{
+ *        slug, label, fitment_id, vehicleLabel
+ *   }] }] }]
+ * where `vehicleLabel` is the full canonical "make model generation-with-years"
+ * label submitted on the picked vehicle (SRS §3.2.4). A universal product / empty
+ * fitment list yields an empty array.
+ * @param {Array} fitmentList - Output of `buildArchetypeFitmentList`.
+ * @returns {Array<Object>}
+ */
+export function buildArchetypeFitmentTree(fitmentList) {
+    const list = Array.isArray(fitmentList) ? fitmentList : [];
+    const makeMap = new Map();
+
+    list.forEach((fitment) => {
+        let makeNode = makeMap.get(fitment.make);
+        if (!makeNode) {
+            makeNode = {
+                slug: fitment.make,
+                label: fitment.makeLabel,
+                modelMap: new Map(),
+            };
+            makeMap.set(fitment.make, makeNode);
+        }
+
+        let modelNode = makeNode.modelMap.get(fitment.model);
+        if (!modelNode) {
+            modelNode = {
+                slug: fitment.model,
+                label: fitment.modelLabel,
+                generations: [],
+            };
+            makeNode.modelMap.set(fitment.model, modelNode);
+        }
+
+        modelNode.generations.push({
+            slug: fitment.generation,
+            label: fitment.generationLabel,
+            fitment_id: fitment.fitment_id,
+            vehicleLabel: fitment.label,
+        });
+    });
+
+    return Array.from(makeMap.values())
+        .map(makeNode => ({
+            slug: makeNode.slug,
+            label: makeNode.label,
+            models: Array.from(makeNode.modelMap.values())
+                .map(modelNode => ({
+                    slug: modelNode.slug,
+                    label: modelNode.label,
+                    generations: modelNode.generations
+                        .slice()
+                        .sort((a, b) => b.label.localeCompare(a.label)),
+                }))
+                .sort((a, b) => a.label.localeCompare(b.label)),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label));
 }

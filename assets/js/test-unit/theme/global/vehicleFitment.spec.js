@@ -4,11 +4,15 @@ import {
     resolveGarageFitment,
     fitmentIdToLabel,
     buildArchetypeFitmentList,
+    buildArchetypeFitmentTree,
 } from '../../../theme/_addons/global/vehicleFitment';
 
-// Object-only search-JSON vehicle_registry (SRS §3.1.4 / Pass 27): every
-// generation node is the canonical { name, fitment_id }. Model/generation maps
-// are keyed by bare slug (the slugs the vehicle selector persists).
+// Object-only search-JSON vehicle_registry (SRS §3.1.4 / Pass 27 + Pass 35):
+// every generation node is the canonical { name, fitment_id }, and the gen
+// node `name` is the generation-with-year-range segment ONLY ("F56 2014 to
+// 2024") — make ("MINI") and model ("Cooper") are ancestor node names. The
+// full canonical label is the make + model + generation concatenation.
+// Model/generation maps are keyed by bare slug (the slugs the selector persists).
 const registry = {
     brands: {
         mini: { name: 'MINI', models: ['cooper'] },
@@ -17,9 +21,9 @@ const registry = {
         cooper: {
             name: 'Cooper',
             generations: {
-                cooperf56: { name: 'MINI Cooper F56', fitment_id: 87 },
-                cooperr56: { name: 'MINI Cooper R56', fitment_id: 42 },
-                coopernoid: { name: 'MINI Cooper (unmapped)', fitment_id: null },
+                cooperf56: { name: 'F56 2014 to 2024', fitment_id: 87 },
+                cooperr56: { name: 'R56 2007 to 2013', fitment_id: 42 },
+                coopernoid: { name: 'GP3 2020 to 2021', fitment_id: null },
             },
         },
     },
@@ -85,8 +89,25 @@ describe('vehicleFitment', () => {
     });
 
     describe('fitmentIdToLabel', () => {
-        it('resolves a known fitment_id to its label', () => {
-            expect(fitmentIdToLabel(registry, 42)).toBe('MINI Cooper R56');
+        it('resolves a known fitment_id to the FULL canonical make + model + gen-with-years label (Pass 35)', () => {
+            // gen node name is "R56 2007 to 2013"; make ("MINI") + model ("Cooper")
+            // are prepended from the brand reverse-lookup + owning model name.
+            expect(fitmentIdToLabel(registry, 42)).toBe('MINI Cooper R56 2007 to 2013');
+            expect(fitmentIdToLabel(registry, 87)).toBe('MINI Cooper F56 2014 to 2024');
+        });
+
+        it('drops the make part when no brand claims the model slug', () => {
+            // No brands map → make reverse-lookup fails; label falls back to
+            // model + generation only, empty make part dropped.
+            const noBrand = {
+                models: {
+                    cooper: {
+                        name: 'Cooper',
+                        generations: { cooperf56: { name: 'F56 2014 to 2024', fitment_id: 87 } },
+                    },
+                },
+            };
+            expect(fitmentIdToLabel(noBrand, 87)).toBe('Cooper F56 2014 to 2024');
         });
 
         it('returns null for an unknown id, a null id, or a missing registry', () => {
@@ -154,6 +175,69 @@ describe('vehicleFitment', () => {
             expect(buildArchetypeFitmentList({ make_model_index: archetype.make_model_index, universal_product: true })).toEqual([]);
             expect(buildArchetypeFitmentList({})).toEqual([]);
             expect(buildArchetypeFitmentList(null)).toEqual([]);
+        });
+    });
+
+    describe('buildArchetypeFitmentTree', () => {
+        // Two makes, one with two models, to exercise grouping + sort ordering.
+        const flat = [
+            {
+                make: 'mini', model: 'cooper', generation: 'r56',
+                makeLabel: 'MINI', modelLabel: 'Cooper', generationLabel: 'R56 2007 to 2013',
+                label: 'MINI Cooper R56 2007 to 2013', fitment_id: 42,
+            },
+            {
+                make: 'mini', model: 'cooper', generation: 'f56',
+                makeLabel: 'MINI', modelLabel: 'Cooper', generationLabel: 'F56 2014 to 2024',
+                label: 'MINI Cooper F56 2014 to 2024', fitment_id: 87,
+            },
+            {
+                make: 'mini', model: 'clubman', generation: 'f54',
+                makeLabel: 'MINI', modelLabel: 'Clubman', generationLabel: 'F54 2016 to 2024',
+                label: 'MINI Clubman F54 2016 to 2024', fitment_id: 91,
+            },
+            {
+                make: 'honda', model: 'civic', generation: 'eg',
+                makeLabel: 'Honda', modelLabel: 'Civic', generationLabel: 'EG 1992 to 1995',
+                label: 'Honda Civic EG 1992 to 1995', fitment_id: 5,
+            },
+        ];
+
+        it('groups the flat list into a make → model → generation tree, sorted', () => {
+            const tree = buildArchetypeFitmentTree(flat);
+
+            // Makes sorted by label: Honda before MINI.
+            expect(tree.map(m => m.slug)).toEqual(['honda', 'mini']);
+
+            const mini = tree.find(m => m.slug === 'mini');
+            // Models sorted by label: Clubman before Cooper.
+            expect(mini.models.map(mo => mo.slug)).toEqual(['clubman', 'cooper']);
+
+            const cooper = mini.models.find(mo => mo.slug === 'cooper');
+            // Generations sorted descending by label, mirroring the add-to-cart
+            // picker's "newest first" ordering: 'R56…' sorts before 'F56…'.
+            expect(cooper.generations.map(g => g.slug)).toEqual(['r56', 'f56']);
+            expect(cooper.generations[0]).toEqual({
+                slug: 'r56',
+                label: 'R56 2007 to 2013',
+                fitment_id: 42,
+                vehicleLabel: 'MINI Cooper R56 2007 to 2013',
+            });
+        });
+
+        it('returns an empty tree for an empty list / non-array', () => {
+            expect(buildArchetypeFitmentTree([])).toEqual([]);
+            expect(buildArchetypeFitmentTree(null)).toEqual([]);
+            expect(buildArchetypeFitmentTree(undefined)).toEqual([]);
+        });
+
+        it('carries a null fitment_id through onto the generation node', () => {
+            const tree = buildArchetypeFitmentTree([{
+                make: 'mini', model: 'cooper', generation: 'gp3',
+                makeLabel: 'MINI', modelLabel: 'Cooper', generationLabel: 'GP3 2020 to 2021',
+                label: 'MINI Cooper GP3 2020 to 2021', fitment_id: null,
+            }]);
+            expect(tree[0].models[0].generations[0].fitment_id).toBeNull();
         });
     });
 });

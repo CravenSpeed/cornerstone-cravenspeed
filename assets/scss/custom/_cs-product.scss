@@ -1357,21 +1357,21 @@ $cs-fitment-active: #06c;
   min-height: 1.5rem;
 }
 
-.cs-ugc-vehicle-append,
-.cs-ugc-vehicle-append-row {
-  display: flex;
-  align-items: center;
-  gap: spacing('quarter');
-}
-
 .cs-ugc-vehicle-picker {
   display: flex;
   flex-direction: column;
   gap: spacing('quarter');
 }
 
-.cs-ugc-vehicle-select {
-  width: 100%;
+// Make → model → generation waterfall (SRS §3.4.1, issue #41). Mirrors the
+// add-to-cart car selector (.cs-car-selection): stacked on mobile, row on
+// desktop. The dropdowns inherit .cs-car-selection-dropdown styling.
+.cs-ugc-vehicle-waterfall {
+  gap: spacing('quarter');
+
+  @include breakpoint('medium') {
+    align-items: stretch;
+  }
 }
 
 // Processing state during the media confirm pipeline (SRS §3.4.4). Reserves

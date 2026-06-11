@@ -82,24 +82,31 @@
  * reviews-only — questions carry none. The confirm call can take 10-30s for video,
  * so a "Processing…" state is surfaced (CLS-safe) while it runs.
  *
- * M9 Slice B (#158) replaces the free-text vehicle input in the submission
- * modals with a STRUCTURED vehicle picker (SRS §3.4.1, §3.2.4, §3.2.5). There is
- * no typed vehicle field anywhere — reviews or Q&A. The modal captures a
- * `fitment_id` (QTY's vehicle identity) and the storefront resolves its display
- * `vehicle_label` from the object generation nodes, never a typed string:
- *   - VERIFIED reviewer (GET /api/token/validate returned a `fitment_id`,
- *     §3.2.8): a pre-checked "Add your <vehicle>" option, append ON by default.
- *     The label comes from fitmentIdToLabel(registry, tokenFitmentId).
- *   - NON-VERIFIED reviewer + ALL Q&A: a make/model/generation dropdown
- *     constrained to the archetype's own fitments via
- *     buildArchetypeFitmentList(archetypeData), pre-filled with the garage
- *     vehicle when it is one of them (matched on make/model/generation slug),
- *     append OFF by default.
- * On submit the chosen `fitment_id` + resolved `vehicle_label` ride on the
- * payload when the user opts to append a vehicle; when they opt out, neither is
- * sent (the API treats an absent `fitment_id` as "no vehicle", §3.2.4/§3.2.5).
- * Universal products carry no archetype fitment tree, so the structured dropdown
- * is empty and the vehicle section is absent — universal submission is unbroken.
+ * M9 (#41) tailors the submission vehicle field to the reviewer's scenario
+ * (SRS §3.4.1, §3.2.4, §3.2.5; canonical label rule §3.2.4 Pass 35). There is no
+ * free-text vehicle input and NO append/opt-in checkbox anywhere — the field's
+ * presence and required-ness are determined by the path:
+ *   - VERIFIED review (GET /api/token/validate returned a `fitment_id`, §3.2.8):
+ *     NO vehicle UI at all (no checkbox, no confirmation line — fully silent).
+ *     The token's `fitment_id` + its full-canonical label (resolved via
+ *     fitmentIdToLabel(registry, tokenFitmentId)) are attached to the payload
+ *     silently. The server overrides `fitment_id` from the token regardless.
+ *   - NON-VERIFIED review (fitment product): a make → model → generation
+ *     WATERFALL (three dependent <select>s) constrained to the archetype's own
+ *     fitments, REQUIRED — submit is blocked until a generation is chosen.
+ *   - Q&A (any, fitment product): the SAME waterfall, but OPTIONAL — submit is
+ *     allowed with no vehicle.
+ *   - UNIVERSAL products (any path): no vehicle field — the archetype fitment
+ *     tree is empty, so the section stays absent and submission is unbroken.
+ *   - VERIFIED token without `fitment_id` (edge): falls back to the non-verified
+ *     waterfall.
+ * The waterfall mirrors the add-to-cart vehicle selector: picking a make
+ * repopulates models, a model repopulates generations, single options auto-
+ * select, and the newest generation auto-selects. It pre-fills all three tiers
+ * from the garage vehicle when it is one of the archetype's fitments (still
+ * required for reviews — pre-fill just saves a step). On submit the chosen
+ * generation's `fitment_id` + its full-canonical `vehicle_label` (make + model +
+ * generation-with-years, §3.2.4) ride on the payload.
  *
  * Slice #30 adds review media DISPLAY (SRS §3.4.1, §3.2.1): a top-level photo
  * thumbnail grid between the rating summary and the review/question tabs,
@@ -119,6 +126,7 @@ import {
     resolveGarageFitment,
     fitmentIdToLabel,
     buildArchetypeFitmentList,
+    buildArchetypeFitmentTree,
 } from '../../global/vehicleFitment';
 
 const MAX_STARS = 5;
@@ -176,13 +184,13 @@ const MESSAGES = {
     mediaUploadError: 'A file failed to upload. Please remove it and try again.',
     mediaProcessing: 'Processing media… this can take up to 30 seconds for video.',
     fitmentChipClear: 'Clear filter',
-    vehicleSectionLabel: 'Vehicle',
-    vehicleSelectDefault: 'Select a vehicle…',
+    vehicleSectionLabel: 'Your Vehicle',
+    vehicleSectionLabelOptional: 'Your Vehicle (optional)',
+    vehicleMakeDefault: 'Select Make',
+    vehicleModelDefault: 'Select Model',
+    vehicleGenerationDefault: 'Select Generation',
+    vehicleRequiredError: 'Please select your vehicle.',
 };
-
-// "Add your <vehicle>" verified-reviewer append label (SRS §3.4.1). The vehicle
-// name is the token fitment's resolved registry label.
-const addVehicleLabel = vehicle => `Add your ${vehicle}`;
 
 // "For your <vehicle>" fitment filter chip label (SRS §3.4.1). The vehicle name
 // is the resolver's label.
@@ -217,10 +225,12 @@ export default class UgcProduct {
         this.unsubscribe = null;
         this.unsubscribeGlobal = null;
 
-        // Archetype-constrained fitment list for the structured submission
-        // dropdown (SRS §3.4.1, Slice B). Empty on universal products / when no
-        // archetype data is injected — the vehicle section is then absent.
+        // Archetype-constrained fitment list + its make → model → generation
+        // tree for the structured submission waterfall (SRS §3.4.1, issue #41).
+        // Both empty on universal products / when no archetype data is injected —
+        // the vehicle section is then absent and submission stays unbroken.
         this.archetypeFitments = buildArchetypeFitmentList(archetypeData || null);
+        this.fitmentTree = buildArchetypeFitmentTree(this.archetypeFitments);
 
         // Cached unfiltered aggregates from the reviews envelope. Constant under
         // filters, so the rating summary is painted once and never refetched
@@ -293,10 +303,17 @@ export default class UgcProduct {
         this.verifiedPurchaserToken = null;
 
         // The token's authoritative `fitment_id` (SRS §3.2.8), held alongside the
-        // token once validated. Drives the verified reviewer's pre-checked
-        // "Add your <vehicle>" option in the review modal (append on by default,
-        // SRS §3.4.1). Null until a valid token carries a fitment.
+        // token once validated. Drives the verified reviewer's SILENT vehicle
+        // attach in the review modal — no UI at all (SRS §3.4.1, issue #41). Null
+        // until a valid token carries a fitment.
         this.verifiedFitmentId = null;
+
+        // The verified reviewer's resolved silent-attach vehicle (issue #41):
+        // { fitment_id, vehicle_label }, stashed by _renderVehicleSection on a
+        // review modal open when a token fitment resolves to a label. Null on the
+        // non-verified / Q&A / universal paths, where the waterfall (or nothing)
+        // is shown instead. Read straight onto the payload on submit.
+        this.verifiedSilentVehicle = null;
 
         // Turnstile widget ids returned by window.turnstile.render, per modal.
         // Tracked so the widget is rendered once and reset after each submit.
@@ -380,6 +397,8 @@ export default class UgcProduct {
         this.onLightboxClick = this.onLightboxClick.bind(this);
         this.onGalleryModalClick = this.onGalleryModalClick.bind(this);
         this.onFitmentChipClick = this.onFitmentChipClick.bind(this);
+        this.onReviewVehicleChange = this.onReviewVehicleChange.bind(this);
+        this.onQuestionVehicleChange = this.onQuestionVehicleChange.bind(this);
 
         const hasReviewsDom = this.ratingElement || this.listElement;
 
@@ -465,6 +484,17 @@ export default class UgcProduct {
 
         if (this.reviewFormElement) {
             this.reviewFormElement.addEventListener('submit', this.onReviewSubmit);
+        }
+
+        // Waterfall cascade: a tier change repopulates its dependents. Delegated
+        // on the vehicle container so it survives each _renderVehicleSection
+        // rebuild without rebinding (SRS §3.4.1, issue #41).
+        if (this.reviewVehicleElement) {
+            this.reviewVehicleElement.addEventListener('change', this.onReviewVehicleChange);
+        }
+
+        if (this.questionVehicleElement) {
+            this.questionVehicleElement.addEventListener('change', this.onQuestionVehicleChange);
         }
 
         const questionOpen = document.querySelector('[data-question-modal-open]');
@@ -553,17 +583,18 @@ export default class UgcProduct {
     }
 
     /**
-     * Paint the structured vehicle section for a submission modal (SRS §3.4.1,
-     * Slice B). There is no free-text vehicle input. The shape depends on the
-     * trust tier and product:
-     *   - VERIFIED review (a token `fitment_id` is held): a pre-checked
-     *     "Add your <vehicle>" checkbox, append ON by default; the vehicle is the
-     *     token's fitment, labelled from the registry.
-     *   - NON-VERIFIED review + ALL Q&A: an append checkbox (OFF by default) plus
-     *     a make/model/generation <select> constrained to the archetype's own
-     *     fitments, pre-selecting the garage vehicle when it is one of them.
-     * Universal products (empty archetype fitment list) and the no-registry case
-     * leave the section empty so universal submission is unbroken.
+     * Paint the vehicle section for a submission modal, tailored to the reviewer's
+     * scenario (SRS §3.4.1, issue #41). There is no free-text input and no
+     * append/opt-in checkbox:
+     *   - VERIFIED review (a token `fitment_id` is held and resolves to a label):
+     *     NO UI at all — the token's fitment + full-canonical label are stashed
+     *     for a silent attach on submit.
+     *   - NON-VERIFIED review + ALL Q&A (fitment product): a make → model →
+     *     generation waterfall constrained to the archetype's own fitments, pre-
+     *     filled from the garage vehicle when it is one of them.
+     *   - UNIVERSAL products / no fitment tree: empty section — no field.
+     *   - VERIFIED token without a resolvable fitment label: falls through to the
+     *     waterfall.
      * @param {string} kind - 'review' | 'question'.
      */
     _renderVehicleSection(kind) {
@@ -572,85 +603,220 @@ export default class UgcProduct {
             return;
         }
 
+        // Reset any prior silent-attach for this modal so a reopened modal starts
+        // from the current trust tier.
+        if (kind === 'review') {
+            this.verifiedSilentVehicle = null;
+        }
+
         if (kind === 'review' && this.verifiedFitmentId !== null) {
             const label = fitmentIdToLabel(this._registry(), this.verifiedFitmentId);
             if (label) {
-                container.innerHTML = this._buildVerifiedVehicle(label);
+                // Fully silent: no UI, attach on submit (SRS §3.4.1, issue #41).
+                this.verifiedSilentVehicle = {
+                    fitment_id: this.verifiedFitmentId,
+                    vehicle_label: label,
+                };
+                container.innerHTML = '';
                 return;
             }
         }
 
-        container.innerHTML = this._buildVehicleDropdown();
+        container.innerHTML = this._buildVehicleWaterfall(kind);
+        this._prefillWaterfall(container);
     }
 
     /**
-     * Build the verified reviewer's pre-checked "Add your <vehicle>" option
-     * (SRS §3.4.1 / §3.2.8). Append defaults ON. The fitment_id rides on the
-     * append checkbox's dataset so submission can read it without a registry
-     * round-trip; on submit the server overrides it from the token anyway (§3.2.4).
-     * @param {string} label
+     * Build the make → model → generation waterfall (three dependent <select>s)
+     * constrained to the archetype's own fitments (SRS §3.4.1, issue #41). Mirrors
+     * the add-to-cart vehicle selector. Empty string when the archetype has no
+     * fitments (universal product). The model/generation selects start disabled
+     * and empty; _populateWaterfall fills them once a make is chosen / pre-filled.
+     * @param {string} kind - 'review' | 'question'.
      * @returns {string}
      */
-    _buildVerifiedVehicle(label) {
-        const text = this._escape(addVehicleLabel(label));
-        const fitmentAttr = this._escapeAttr(String(this.verifiedFitmentId));
-        const labelAttr = this._escapeAttr(label);
-        return `<label class="cs-ugc-field cs-ugc-vehicle-append">
-                    <input type="checkbox" data-vehicle-append data-vehicle-fitment-id="${fitmentAttr}" data-vehicle-label="${labelAttr}" checked>
-                    <span class="cs-ugc-field-label">${text}</span>
-                </label>`;
-    }
-
-    /**
-     * Build the non-verified make/model/generation dropdown constrained to the
-     * archetype's own fitments (SRS §3.4.1), plus the append checkbox (OFF by
-     * default). Each option carries its `fitment_id` and resolved label so submit
-     * reads them straight off the selected option. Empty string when the archetype
-     * has no fitments (universal product) — the vehicle section is then absent.
-     * The garage vehicle is pre-selected when it matches one of the options.
-     * @returns {string}
-     */
-    _buildVehicleDropdown() {
-        if (!this.archetypeFitments.length) {
+    _buildVehicleWaterfall(kind) {
+        if (!this.fitmentTree.length) {
             return '';
         }
 
-        const selectedSlug = this._garageFitmentSlug();
-        const options = this.archetypeFitments.map((fitment) => {
-            const value = fitment.fitment_id === null ? '' : String(fitment.fitment_id);
-            const slug = `${fitment.make}|${fitment.model}|${fitment.generation}`;
-            const selected = slug === selectedSlug ? ' selected' : '';
-            // Both the option's visible text and the submitted vehicle_label are
-            // the full make/model/generation label (SRS §3.4.1) — the same display
-            // label fitmentIdToLabel resolves on the verified path, e.g.
-            // "MINI Cooper F56".
-            return `<option value="${this._escapeAttr(value)}" data-vehicle-label="${this._escapeAttr(fitment.label)}"${selected}>${this._escape(fitment.label)}</option>`;
-        });
+        // The non-verified review requires a vehicle; Q&A is optional.
+        const required = kind === 'review';
+        const sectionLabel = this._escape(
+            required ? MESSAGES.vehicleSectionLabel : MESSAGES.vehicleSectionLabelOptional,
+        );
+        const makeOptions = this.fitmentTree
+            .map(make => `<option value="${this._escapeAttr(make.slug)}">${this._escape(make.label)}</option>`)
+            .join('');
 
-        const appendChecked = selectedSlug ? ' checked' : '';
-        const appendLabel = this._escape(MESSAGES.vehicleSectionLabel);
-        const defaultOption = this._escape(MESSAGES.vehicleSelectDefault);
-
-        return `<div class="cs-ugc-field cs-ugc-vehicle-picker">
-                    <label class="cs-ugc-vehicle-append-row">
-                        <input type="checkbox" data-vehicle-append${appendChecked}>
-                        <span class="cs-ugc-field-label">${appendLabel}</span>
-                    </label>
-                    <select class="cs-ugc-input cs-ugc-vehicle-select" data-vehicle-select>
-                        <option value="">${defaultOption}</option>
-                        ${options.join('')}
-                    </select>
+        return `<div class="cs-ugc-vehicle-picker"${required ? ' data-vehicle-required' : ''}>
+                    <span class="cs-ugc-field-label">${sectionLabel}</span>
+                    <div class="cs-car-selection cs-ugc-vehicle-waterfall">
+                        <div class="cs-car-selection-field">
+                            <select class="cs-car-selection-dropdown cs-ugc-vehicle-tier" data-vehicle-tier="make" aria-label="${this._escapeAttr(MESSAGES.vehicleMakeDefault)}">
+                                <option value="">${this._escape(MESSAGES.vehicleMakeDefault)}</option>
+                                ${makeOptions}
+                            </select>
+                        </div>
+                        <div class="cs-car-selection-field">
+                            <select class="cs-car-selection-dropdown cs-ugc-vehicle-tier" data-vehicle-tier="model" aria-label="${this._escapeAttr(MESSAGES.vehicleModelDefault)}" disabled>
+                                <option value="">${this._escape(MESSAGES.vehicleModelDefault)}</option>
+                            </select>
+                        </div>
+                        <div class="cs-car-selection-field">
+                            <select class="cs-car-selection-dropdown cs-ugc-vehicle-tier" data-vehicle-tier="generation" aria-label="${this._escapeAttr(MESSAGES.vehicleGenerationDefault)}" disabled>
+                                <option value="">${this._escape(MESSAGES.vehicleGenerationDefault)}</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>`;
     }
 
     /**
-     * Resolve the visitor's garage selection to its `make|model|generation` slug
-     * key, matched against the archetype fitment options to pre-select the
-     * dropdown (SRS §3.4.1). Null when there is no garage vehicle or it is not one
-     * of the archetype's fitments.
-     * @returns {string|null}
+     * Read a tier <select> from a vehicle container.
+     * @param {HTMLElement} container
+     * @param {string} tier - 'make' | 'model' | 'generation'.
+     * @returns {HTMLSelectElement|null}
      */
-    _garageFitmentSlug() {
+    _tierSelect(container, tier) {
+        return container ? container.querySelector(`[data-vehicle-tier="${tier}"]`) : null;
+    }
+
+    /**
+     * Reset a tier <select> to its single placeholder option and disable it.
+     * @param {HTMLSelectElement|null} select
+     * @param {string} placeholder
+     */
+    _resetTier(select, placeholder) {
+        if (!select) {
+            return;
+        }
+        select.innerHTML = `<option value="">${this._escape(placeholder)}</option>`;
+        select.disabled = true;
+    }
+
+    /**
+     * Append an <option> to a tier <select> and enable it. Optional dataset entries
+     * carry the generation's fitment_id + full-canonical label for submit-read.
+     * @param {HTMLSelectElement} select
+     * @param {string} value
+     * @param {string} text
+     * @param {Object} [data]
+     */
+    _addTierOption(select, value, text, data) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = text;
+        if (data) {
+            Object.keys(data).forEach((key) => { option.dataset[key] = data[key]; });
+        }
+        select.appendChild(option);
+        select.disabled = false;
+    }
+
+    /**
+     * Repopulate the model tier from the chosen make (and clear generation), or
+     * repopulate the generation tier from the chosen model. Mirrors the add-to-cart
+     * cascade: a single option auto-selects, and the newest generation (first in
+     * the tree's descending order) auto-selects, in turn cascading downward.
+     * @param {HTMLElement} container
+     * @param {string} tier - the tier that just changed ('make' | 'model').
+     */
+    _populateWaterfall(container, tier) {
+        const makeSelect = this._tierSelect(container, 'make');
+        const modelSelect = this._tierSelect(container, 'model');
+        const generationSelect = this._tierSelect(container, 'generation');
+
+        if (tier === 'make') {
+            this._resetTier(modelSelect, MESSAGES.vehicleModelDefault);
+            this._resetTier(generationSelect, MESSAGES.vehicleGenerationDefault);
+
+            const make = this.fitmentTree.find(m => m.slug === makeSelect.value);
+            if (!make) {
+                return;
+            }
+
+            make.models.forEach((model) => {
+                this._addTierOption(modelSelect, model.slug, model.label);
+            });
+
+            if (make.models.length === 1) {
+                modelSelect.value = make.models[0].slug;
+                this._populateWaterfall(container, 'model');
+            }
+            return;
+        }
+
+        // tier === 'model'
+        this._resetTier(generationSelect, MESSAGES.vehicleGenerationDefault);
+
+        const make = this.fitmentTree.find(m => m.slug === makeSelect.value);
+        const model = make ? make.models.find(mo => mo.slug === modelSelect.value) : null;
+        if (!model) {
+            return;
+        }
+
+        model.generations.forEach((generation) => {
+            const value = generation.fitment_id === null ? '' : String(generation.fitment_id);
+            this._addTierOption(generationSelect, value, generation.label, {
+                vehicleLabel: generation.vehicleLabel,
+            });
+        });
+
+        // Auto-select the newest generation (first in the descending-sorted list),
+        // matching the add-to-cart picker.
+        if (model.generations.length) {
+            const newest = model.generations[0];
+            generationSelect.value = newest.fitment_id === null ? '' : String(newest.fitment_id);
+        }
+    }
+
+    /**
+     * Pre-fill the waterfall from the visitor's garage vehicle when it is one of
+     * the archetype's fitments (SRS §3.4.1, issue #41 — reuses the garage slug
+     * match). Each tier is set and its dependents cascaded. No-op when there is no
+     * garage match — the cascade then waits on the first user pick.
+     * @param {HTMLElement} container
+     */
+    _prefillWaterfall(container) {
+        const garage = this._garageVehicle();
+        if (!garage) {
+            return;
+        }
+
+        const makeSelect = this._tierSelect(container, 'make');
+        const modelSelect = this._tierSelect(container, 'model');
+        const generationSelect = this._tierSelect(container, 'generation');
+        if (!makeSelect) {
+            return;
+        }
+
+        makeSelect.value = garage.make;
+        this._populateWaterfall(container, 'make');
+        if (makeSelect.value !== garage.make) {
+            return;
+        }
+
+        modelSelect.value = garage.model;
+        this._populateWaterfall(container, 'model');
+        if (modelSelect.value !== garage.model) {
+            return;
+        }
+
+        // _populateWaterfall already auto-selected the newest generation; override
+        // it with the garage generation when present.
+        generationSelect.value = generationSelect.querySelector(`option[value="${garage.fitmentValue}"]`)
+            ? garage.fitmentValue
+            : generationSelect.value;
+    }
+
+    /**
+     * Resolve the visitor's garage selection to bare make/model/generation slugs
+     * plus the matching archetype fitment's id-as-string, but ONLY when the garage
+     * vehicle is one of this archetype's fitments (SRS §3.4.1). Null otherwise.
+     * @returns {{make: string, model: string, generation: string, fitmentValue: string}|null}
+     */
+    _garageVehicle() {
         if (!this.globalStateManager) {
             return null;
         }
@@ -661,50 +827,95 @@ export default class UgcProduct {
             return null;
         }
 
-        const slug = `${vehicle.make}|${vehicle.model}|${vehicle.generation}`;
-        const match = this.archetypeFitments.some(
-            fitment => `${fitment.make}|${fitment.model}|${fitment.generation}` === slug,
+        const match = this.archetypeFitments.find(
+            fitment => fitment.make === vehicle.make
+                && fitment.model === vehicle.model
+                && fitment.generation === vehicle.generation,
         );
-        return match ? slug : null;
+        if (!match) {
+            return null;
+        }
+
+        return {
+            make: vehicle.make,
+            model: vehicle.model,
+            generation: vehicle.generation,
+            fitmentValue: match.fitment_id === null ? '' : String(match.fitment_id),
+        };
+    }
+
+    onReviewVehicleChange(event) {
+        this._onVehicleTierChange(this.reviewVehicleElement, event);
+    }
+
+    onQuestionVehicleChange(event) {
+        this._onVehicleTierChange(this.questionVehicleElement, event);
+    }
+
+    /**
+     * Cascade handler for a waterfall tier change: a make change repopulates
+     * models + generations; a model change repopulates generations. A generation
+     * change needs no cascade (SRS §3.4.1).
+     * @param {HTMLElement} container
+     * @param {Event} event
+     */
+    _onVehicleTierChange(container, event) {
+        const select = event.target.closest('[data-vehicle-tier]');
+        if (!container || !select || !container.contains(select)) {
+            return;
+        }
+
+        const tier = select.dataset.vehicleTier;
+        if (tier === 'make' || tier === 'model') {
+            this._populateWaterfall(container, tier);
+        }
     }
 
     /**
      * Read the chosen structured vehicle off a submission modal (SRS §3.4.1,
-     * Slice B). Returns { fitment_id, vehicle_label } when the user opts to append
-     * a vehicle and one is resolvable, or null when they opt out / none is chosen.
-     * The verified review path reads the pre-checked option's dataset; the
-     * dropdown path reads the selected <option>. A non-positive / unparseable
-     * fitment_id resolves to null (un-filterable garage entry, never appended).
+     * issue #41). Returns { fitment_id, vehicle_label } when a vehicle is resolved,
+     * or null when none is chosen. The verified review path returns the stashed
+     * silent-attach; the waterfall path reads the selected generation <option>. A
+     * non-positive / unparseable fitment_id resolves to null (un-filterable
+     * generation, never attached).
      * @param {string} kind - 'review' | 'question'.
      * @returns {{fitment_id: number, vehicle_label: string}|null}
      */
     _readVehicleSelection(kind) {
+        if (kind === 'review' && this.verifiedSilentVehicle) {
+            return this.verifiedSilentVehicle;
+        }
+
         const container = kind === 'review' ? this.reviewVehicleElement : this.questionVehicleElement;
-        if (!container) {
+        const generationSelect = this._tierSelect(container, 'generation');
+        if (!generationSelect) {
             return null;
         }
 
-        const append = container.querySelector('[data-vehicle-append]');
-        if (!append || !append.checked) {
-            return null;
-        }
-
-        let value = append.dataset.vehicleFitmentId;
-        let label = append.dataset.vehicleLabel;
-
-        const select = container.querySelector('[data-vehicle-select]');
-        if (select) {
-            const option = select.options[select.selectedIndex];
-            value = select.value;
-            label = option ? option.dataset.vehicleLabel : '';
-        }
-
-        const fitmentId = parseInt(value, 10);
+        const option = generationSelect.options[generationSelect.selectedIndex];
+        const fitmentId = parseInt(generationSelect.value, 10);
         if (Number.isNaN(fitmentId) || fitmentId <= 0) {
             return null;
         }
 
+        const label = option ? option.dataset.vehicleLabel : '';
         return { fitment_id: fitmentId, vehicle_label: label || '' };
+    }
+
+    /**
+     * Whether the modal's vehicle waterfall is required but unsatisfied (SRS
+     * §3.4.1, issue #41). True only for the non-verified review waterfall with no
+     * generation chosen — Q&A is optional, the verified silent-attach has no UI,
+     * and universal products have no waterfall.
+     * @param {string} kind - 'review' | 'question'.
+     * @returns {boolean}
+     */
+    _vehicleRequiredUnmet(kind) {
+        const container = kind === 'review' ? this.reviewVehicleElement : this.questionVehicleElement;
+        if (!container || !container.querySelector('[data-vehicle-required]')) {
+            return false;
+        }
+        return this._readVehicleSelection(kind) === null;
     }
 
     /**
@@ -880,6 +1091,14 @@ export default class UgcProduct {
             return;
         }
 
+        // The non-verified review waterfall is required (SRS §3.4.1, issue #41):
+        // block submit until a generation is chosen. The verified silent-attach,
+        // Q&A, and universal paths never set this.
+        if (this._vehicleRequiredUnmet('review')) {
+            this._setError(modal, MESSAGES.vehicleRequiredError);
+            return;
+        }
+
         const token = this.getTurnstileToken('review');
         if (!token) {
             this._setError(modal, MESSAGES.turnstileError);
@@ -997,13 +1216,14 @@ export default class UgcProduct {
      * fields (`alias_id`, `fitment_id` + `vehicle_label`, `ugc_token`) are included
      * only when present so the API receives a clean body; the honeypot `website`
      * and `cf_turnstile_token` are always sent. The structured vehicle (SRS §3.4.1,
-     * Slice B) rides along as `fitment_id` + its resolved `vehicle_label` ONLY when
-     * the user opted to append a vehicle — never a typed string; omitted entirely
-     * when they opt out (the API reads that as "no vehicle"). On the verified path
-     * the server overrides `fitment_id` from the token regardless (§3.2.4). A held
-     * verified-purchaser token rides along as `ugc_token`. Confirmed media
-     * (SRS §3.4.4) rides as the ordered `media_urls` array — index = sort_order —
-     * omitted when no files were attached.
+     * issue #41) rides along as `fitment_id` + its full-canonical `vehicle_label`:
+     * the verified silent-attach always provides one; the non-verified review
+     * waterfall is required (so one is always present by the time submit runs);
+     * Q&A/universal omit it when none is chosen. Never a typed string. On the
+     * verified path the server overrides `fitment_id` from the token regardless
+     * (§3.2.4). A held verified-purchaser token rides along as `ugc_token`.
+     * Confirmed media (SRS §3.4.4) rides as the ordered `media_urls` array — index
+     * = sort_order — omitted when no files were attached.
      * @param {Object} fields
      * @param {string} token
      * @returns {Object}
@@ -1045,8 +1265,9 @@ export default class UgcProduct {
     /**
      * Shape the question submission body to the frozen SRS §3.2.5 contract.
      * Questions have no token path, so the structured vehicle (SRS §3.4.1) is
-     * always the archetype-constrained dropdown's choice — `fitment_id` + its
-     * resolved `vehicle_label`, sent only when the user opted to append a vehicle.
+     * always the archetype-constrained waterfall's choice — `fitment_id` + its
+     * full-canonical `vehicle_label`, sent only when a vehicle is chosen (Q&A is
+     * optional).
      * @param {Object} fields
      * @param {string} token
      * @returns {Object}
@@ -2490,6 +2711,14 @@ export default class UgcProduct {
 
         if (this.reviewFormElement) {
             this.reviewFormElement.removeEventListener('submit', this.onReviewSubmit);
+        }
+
+        if (this.reviewVehicleElement) {
+            this.reviewVehicleElement.removeEventListener('change', this.onReviewVehicleChange);
+        }
+
+        if (this.questionVehicleElement) {
+            this.questionVehicleElement.removeEventListener('change', this.onQuestionVehicleChange);
         }
 
         const questionOpen = document.querySelector('[data-question-modal-open]');
