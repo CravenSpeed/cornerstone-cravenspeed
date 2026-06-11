@@ -853,7 +853,7 @@ $cs-fitment-active-hover: #05a;
   min-height: 44px;
   padding: 0 spacing('half');
   border: 1px solid stencilColor('color-textSecondary');
-  border-radius: 999px;
+  border-radius: spacing('half'); // matches the selects + button (_custom.scss:57)
   background: transparent;
   color: stencilColor('color-textBase');
   font-size: 0.875rem;
@@ -928,6 +928,52 @@ $cs-fitment-active-hover: #05a;
   }
 }
 
+// "Select your vehicle to filter" prompt: shown in the chip slot on a
+// fitment-capable product when no garage vehicle is resolved. A dashed ghost
+// button (distinct from the solid active chip) that scrolls to the vehicle
+// picker on click; the trailing arrow signals the jump.
+.cs-fitment-prompt {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 spacing('half');
+  border: 1px dashed stencilColor('color-textSecondary');
+  border-radius: spacing('half'); // matches the selects + button (_custom.scss:57)
+  background: transparent;
+  color: stencilColor('color-textSecondary');
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+
+  &::after {
+    content: '→';
+    margin-left: spacing('quarter');
+  }
+
+  &:hover {
+    border-color: $cs-fitment-active;
+    color: $cs-fitment-active;
+  }
+
+  &:focus-visible {
+    outline: 2px solid stencilColor('color-primary');
+    outline-offset: 2px;
+  }
+}
+
+// Passive status when a resolved garage vehicle has no reviews/questions on this
+// product: explains why no "For your <vehicle>" filter chip is offered. Muted,
+// italic, non-interactive — distinct from the dashed prompt and the blue chip.
+.cs-fitment-empty {
+  color: stencilColor('color-textSecondary');
+  font-size: 0.875rem;
+  font-style: italic;
+}
+
 // Active click-filter label (issue #45): when a customer clicks a review/question
 // vehicle badge, this replaces the garage chip with "Showing: <vehicle>". Mirrors
 // the active chip's blue pill but is non-interactive — the adjacent
@@ -938,7 +984,7 @@ $cs-fitment-active-hover: #05a;
   min-height: 44px;
   max-width: 100%;
   padding: 0 spacing('half');
-  border-radius: 999px;
+  border-radius: spacing('half'); // matches the selects + button (_custom.scss:57)
   background: $cs-fitment-active;
   color: #fff;
   font-size: 0.875rem;
@@ -1067,6 +1113,16 @@ $cs-fitment-active-hover: #05a;
 .cs-review-author {
   color: stencilColor('color-textBase');
   font-weight: 600;
+}
+
+// Reviewer country flag (SRS §3.2.1 `country`). Sized to the meta line; a hairline
+// border keeps white-edged flags (Japan, Finland…) visible on the white card. The
+// flex meta row centers it; absent entirely when the review carries no country.
+.cs-review-flag {
+  height: 1em;
+  width: auto;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 .cs-review-verified {
@@ -1292,9 +1348,11 @@ button.cs-ugc-vehicle-badge {
 .cs-ugc-submit-open {
   margin-top: spacing('half');
 
+  // Drop Foundation's default `.button` bottom margin so the button bottom-aligns
+  // flush with the toolbar's select inputs (the row is align-items: flex-end, so
+  // that ~1rem bottom margin was lifting the button above the selects' baseline).
   @include breakpoint('medium') {
-    margin-top: 0;
-    margin-left: auto;
+    margin: 0 0 0 auto;
   }
 }
 

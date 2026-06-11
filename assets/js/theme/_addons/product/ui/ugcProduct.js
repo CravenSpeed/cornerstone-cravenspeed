@@ -184,6 +184,7 @@ const MESSAGES = {
     mediaUploadError: 'A file failed to upload. Please remove it and try again.',
     mediaProcessing: 'Processing media… this can take up to 30 seconds for video.',
     fitmentChipClear: 'Clear filter',
+    fitmentPrompt: 'Select your vehicle to filter',
     vehicleSectionLabel: 'Your Vehicle',
     vehicleSectionLabelOptional: 'Your Vehicle (optional)',
     vehicleMakeDefault: 'Select Make',
@@ -199,6 +200,11 @@ const fitmentChipLabel = vehicle => `For your ${vehicle}`;
 // Active click-filter chip label (issue #45) — names the clicked review/question
 // vehicle that the list is currently restricted to.
 const showingChipLabel = vehicle => `Showing: ${vehicle}`;
+
+// Passive status shown in place of the chip when a resolved garage vehicle has
+// no matching reviews/questions on this product — explains why no filter chip
+// is offered. `noun` is 'reviews' or 'questions'.
+const noFitmentMatchLabel = (vehicle, noun) => `No ${noun} yet for your ${vehicle}`;
 
 export default class UgcProduct {
     /**
@@ -1221,6 +1227,33 @@ export default class UgcProduct {
                 ? fitmentId
                 : null;
         }
+
+        // Arrived from the email's tokenized review link — take the customer
+        // straight to writing. Done after validate resolves so the modal's
+        // vehicle section reflects verified (silent attach) vs unverified
+        // (waterfall); opened regardless of validity, since an expired token
+        // still means they came to leave a review (just unverified).
+        this._openReviewSubmissionFromToken();
+    }
+
+    /**
+     * Activate the reviews tab and open the submission modal, for a visitor who
+     * landed via the tokenized email link (SRS §3.2.8). The tab is switched the
+     * same way a click does (mirrors tabDeepLink), so closing the modal leaves
+     * them on the reviews tab rather than the description. No-op when the page
+     * has no review modal (e.g. a questions-only layout).
+     */
+    _openReviewSubmissionFromToken() {
+        if (!this.reviewModalElement) {
+            return;
+        }
+
+        const reviewsTab = document.querySelector('ul.tabs a[href="#tab-reviews"]');
+        if (reviewsTab) {
+            reviewsTab.click();
+        }
+
+        this.openModal(this.reviewModalElement, this.reviewFormElement);
     }
 
     /**
@@ -1728,6 +1761,15 @@ export default class UgcProduct {
      * @param {Event} event
      */
     onFitmentChipClick(event) {
+        // "Select your vehicle to filter" prompt (shown when no vehicle is
+        // resolved) — scroll to the make/model/generation picker so the visitor
+        // can set one, which then resolves the garage fitment and the chip.
+        if (event.target.closest('[data-fitment-prompt]')) {
+            event.preventDefault();
+            this._scrollToVehiclePicker();
+            return;
+        }
+
         const trigger = event.target.closest('[data-fitment-chip-toggle], [data-fitment-chip-clear]');
         if (!trigger) {
             return;
@@ -1759,6 +1801,27 @@ export default class UgcProduct {
 
         this.fitmentOnly = nextOnly;
         this._refilter();
+    }
+
+    /**
+     * Scroll the make/model/generation picker into view (and focus Make) from
+     * the "Select your vehicle to filter" prompt. Selecting a vehicle there
+     * drives the global garage state, which resolves the fitment and swaps the
+     * prompt for the live chip. No-op if the picker is absent.
+     */
+    _scrollToVehiclePicker() {
+        const make = document.querySelector('[data-product-option="make"]');
+        if (!make) {
+            return;
+        }
+
+        if (typeof make.scrollIntoView === 'function') {
+            make.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        if (!make.disabled) {
+            make.focus({ preventScroll: true });
+        }
     }
 
     /**
@@ -1843,11 +1906,30 @@ export default class UgcProduct {
             return;
         }
 
-        const count = kind === 'questions' ? this.fitmentQuestionCount : this.fitmentReviewCount;
+        // No garage vehicle resolved yet. On a fitment-capable product, prompt
+        // the visitor to pick one so the filter becomes available; on a universal
+        // product (no archetype fitments) there is nothing to filter, so stay
+        // hidden. The prompt scrolls to the make/model/generation picker on click.
+        if (this.fitmentId === null) {
+            if (this.archetypeFitments.length > 0) {
+                container.innerHTML = `<button type="button" class="cs-fitment-prompt" data-fitment-prompt>${this._escape(MESSAGES.fitmentPrompt)}</button>`;
+                container.style.visibility = 'visible';
+            } else {
+                container.innerHTML = '';
+                container.style.visibility = 'hidden';
+            }
+            return;
+        }
 
-        if (!this.fitmentLabel || count <= 0) {
-            container.innerHTML = '';
-            container.style.visibility = 'hidden';
+        // Garage vehicle resolved but with no matching items on this product —
+        // surface a passive "No reviews yet for your <vehicle>" status so the
+        // absent filter chip is explained rather than silently missing.
+        const count = kind === 'questions' ? this.fitmentQuestionCount : this.fitmentReviewCount;
+        if (count <= 0) {
+            const noun = kind === 'questions' ? 'questions' : 'reviews';
+            const message = this._escape(noFitmentMatchLabel(this.fitmentLabel, noun));
+            container.innerHTML = `<span class="cs-fitment-empty">${message}</span>`;
+            container.style.visibility = 'visible';
             return;
         }
 
@@ -2711,6 +2793,30 @@ export default class UgcProduct {
         return `<p class="cs-ugc-vehicle-badge ${modifier}">${label}</p>`;
     }
 
+    /**
+     * Render a small country flag from the review's ISO-3166 alpha-2 `country`
+     * (SRS §3.2.1, derived server-side from the submission IP; null on imported
+     * or un-geolocated rows). Served as SVG from flagcdn.com and lazy-loaded.
+     * Returns '' when there is no valid two-letter code, so older reviews simply
+     * show no flag. The code is validated to `[a-z]{2}`, so it is safe to
+     * interpolate into the URL/alt without further escaping.
+     * @param {string} code - The review's `country`.
+     * @returns {string}
+     */
+    _countryFlag(code) {
+        if (typeof code !== 'string') {
+            return '';
+        }
+
+        const cc = code.trim().toLowerCase();
+        if (!/^[a-z]{2}$/.test(cc)) {
+            return '';
+        }
+
+        const label = cc.toUpperCase();
+        return `<img class="cs-review-flag" src="https://flagcdn.com/${cc}.svg" alt="${label}" title="${label}" loading="lazy">`;
+    }
+
     _buildReview(review, includeMedia = true, clickableVehicle = true) {
         const author = this._escape(review.author) || MESSAGES.anonymous;
         const title = this._escape(review.title);
@@ -2744,6 +2850,7 @@ export default class UgcProduct {
                 </div>
                 <p class="cs-review-meta">
                     <span class="cs-review-author">${author}</span>
+                    ${this._countryFlag(review.country)}
                     ${verified}
                     ${edited}
                 </p>
