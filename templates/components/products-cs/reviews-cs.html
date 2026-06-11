@@ -49,8 +49,15 @@
     <div class="cs-ugc-modal" data-review-modal hidden>
         <div class="cs-ugc-modal-overlay" data-review-modal-close></div>
         <div class="cs-ugc-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="cs-review-modal-title">
-            <button type="button" class="cs-ugc-modal-close" data-review-modal-close aria-label="{{lang 'products.reviews.submit.close'}}">&times;</button>
-            <h4 id="cs-review-modal-title">{{lang 'products.reviews.submit.heading'}}</h4>
+            <button type="button" class="cs-ugc-modal-close" data-review-modal-close aria-label="{{lang 'products.reviews.submit.close'}}">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            <header class="cs-ugc-modal-header">
+                <div class="cs-ugc-modal-heading">
+                    <h4 class="cs-ugc-modal-title" id="cs-review-modal-title">{{lang 'products.reviews.submit.heading'}}</h4>
+                    <p class="cs-ugc-modal-subtitle">{{lang 'products.reviews.submit.subheading'}}</p>
+                </div>
+            </header>
             <form class="cs-ugc-form" data-review-form novalidate>
                 <p class="cs-ugc-form-error" data-review-error role="alert" hidden></p>
                 <p class="cs-ugc-form-success" data-review-success hidden>{{lang 'products.reviews.submit.success'}}</p>

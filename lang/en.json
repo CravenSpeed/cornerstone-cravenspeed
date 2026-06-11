@@ -773,6 +773,7 @@
             "submit": {
                 "open": "Write a Review",
                 "heading": "Write a Review",
+                "subheading": "Share your experience to help other drivers find the right fit.",
                 "rating_label": "Rating",
                 "rating_required": "Please select a star rating.",
                 "title_label": "Title",
@@ -802,6 +803,7 @@
             "submit": {
                 "open": "Ask a Question",
                 "heading": "Ask a Question",
+                "subheading": "Ask about fitment, installation, or anything else — we'll help.",
                 "body_label": "Your Question",
                 "author_label": "Your Name",
                 "vehicle_label": "Your Vehicle (optional)",
