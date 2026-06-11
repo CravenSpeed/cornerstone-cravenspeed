@@ -1119,6 +1119,234 @@ describe('UgcProduct (slice A — fitment filter chip, reviews)', () => {
     });
 });
 
+describe('UgcProduct (issue #45 — click a vehicle badge to filter)', () => {
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    const paramsOfCall = (api, n) => api.getReviews.mock.calls[n - 1][1];
+    const lastReviewParams = api => paramsOfCall(api, api.getReviews.mock.calls.length);
+    const reviewsChip = () => document.querySelector('[data-reviews-fitment-chip]');
+    const reviewBadges = () => document.querySelectorAll('#product-reviews .cs-ugc-vehicle-badge');
+
+    const reviewItem = (over = {}) => ({
+        id: 1,
+        author: 'Jane D.',
+        rating: 5,
+        title: 't',
+        body: 'b',
+        fitment_id: 42,
+        vehicle_label: 'MINI Cooper R53 2002 to 2006',
+        ...over,
+    });
+
+    const buildReviewsApiWith = (items, count) => ({
+        getReviews: jest.fn(() => Promise.resolve(okEnvelope({
+            items,
+            total: items.length,
+            fitment_review_count: count === undefined ? items.length : count,
+        }))),
+    });
+
+    describe('reviews', () => {
+        beforeEach(() => {
+            mountScaffold();
+        });
+
+        it('renders a clickable button badge for a review with a fitment_id, a static <p> without', async () => {
+            const items = [
+                reviewItem({ id: 1, fitment_id: 42, vehicle_label: 'MINI Cooper R53 2002 to 2006' }),
+                reviewItem({ id: 2, fitment_id: null, vehicle_label: 'Legacy Vehicle' }),
+            ];
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildReviewsApiWith(items));
+            await flush();
+
+            const badges = reviewBadges();
+            expect(badges.length).toBe(2);
+            expect(badges[0].tagName).toBe('BUTTON');
+            expect(badges[0].dataset.fitmentFilter).toBe('42');
+            expect(badges[0].dataset.fitmentLabel).toBe('MINI Cooper R53 2002 to 2006');
+            expect(badges[1].tagName).toBe('P');
+            expect(badges[1].hasAttribute('data-fitment-filter')).toBe(false);
+        });
+
+        it('renders a static (non-clickable) badge for the lightbox review, a button in the list', async () => {
+            const ugc = new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildReviewsApiWith([]));
+            await flush();
+            const review = reviewItem({ fitment_id: 42 });
+
+            // List context (default): a clickable filter button.
+            expect(ugc._buildReview(review)).toContain('data-fitment-filter="42"');
+
+            // Lightbox context (clickable=false): a static <p>, no filter hook.
+            const lightbox = ugc._buildReview(review, false, false);
+            expect(lightbox).toContain('<p class="cs-ugc-vehicle-badge cs-review-vehicle">');
+            expect(lightbox).not.toContain('data-fitment-filter');
+        });
+
+        it('filters to the clicked vehicle (fitment_only + that fitment_id, page 1) on badge click', async () => {
+            const api = buildReviewsApiWith([reviewItem({ fitment_id: 42 })], 4);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            reviewBadges()[0].click();
+            await flush();
+
+            expect(api.getReviews).toHaveBeenCalledTimes(2);
+            expect(paramsOfCall(api, 2).fitment_id).toBe(42);
+            expect(paramsOfCall(api, 2).fitment_only).toBe(true);
+            expect(paramsOfCall(api, 2).page).toBe(1);
+        });
+
+        it('shows a "Showing: <vehicle>" takeover chip and clears back to the default view', async () => {
+            const api = buildReviewsApiWith([reviewItem({ fitment_id: 42 })], 4);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            reviewBadges()[0].click();
+            await flush();
+
+            const showing = reviewsChip().querySelector('.cs-fitment-showing');
+            expect(showing).not.toBeNull();
+            expect(showing.textContent).toContain('Showing: MINI Cooper R53 2002 to 2006');
+            expect(reviewsChip().querySelector('[data-fitment-chip-clear]')).not.toBeNull();
+            expect(reviewsChip().style.visibility).toBe('visible');
+
+            reviewsChip().querySelector('[data-fitment-chip-clear]').click();
+            await flush();
+
+            expect(api.getReviews).toHaveBeenCalledTimes(3);
+            expect(paramsOfCall(api, 3).fitment_id).toBeNull();
+            expect(paramsOfCall(api, 3).fitment_only).toBeNull();
+            expect(reviewsChip().querySelector('.cs-fitment-showing')).toBeNull();
+        });
+
+        it('activates the garage chip (no takeover) when the clicked badge is the garage vehicle', async () => {
+            const api = buildReviewsApiWith([reviewItem({ fitment_id: 87, vehicle_label: 'MINI Cooper F56 2014 to 2024' })], 5);
+            const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+            await flush();
+
+            reviewBadges()[0].click();
+            await flush();
+
+            expect(reviewsChip().querySelector('.cs-fitment-showing')).toBeNull();
+            expect(reviewsChip().querySelector('[data-fitment-chip-toggle]').classList).toContain('is-active');
+            expect(lastReviewParams(api).fitment_id).toBe(87);
+            expect(lastReviewParams(api).fitment_only).toBe(true);
+        });
+
+        it('takes over the garage chip with a non-garage vehicle and restores it on clear', async () => {
+            const api = buildReviewsApiWith([reviewItem({ fitment_id: 42 })], 5);
+            const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+            await flush();
+            expect(reviewsChip().textContent).toContain('For your MINI Cooper');
+
+            reviewBadges()[0].click();
+            await flush();
+
+            expect(reviewsChip().querySelector('[data-fitment-chip-toggle]')).toBeNull();
+            expect(reviewsChip().querySelector('.cs-fitment-showing').textContent).toContain('Showing: MINI Cooper R53');
+            expect(lastReviewParams(api).fitment_id).toBe(42);
+
+            reviewsChip().querySelector('[data-fitment-chip-clear]').click();
+            await flush();
+
+            expect(lastReviewParams(api).fitment_id).toBe(87);
+            expect(lastReviewParams(api).fitment_only).toBeNull();
+            expect(reviewsChip().textContent).toContain('For your MINI Cooper');
+        });
+
+        it('drops an active click-filter when the garage vehicle is swapped', async () => {
+            const registry = {
+                brands: { mini: { name: 'MINI', models: ['cooper'] } },
+                models: {
+                    cooper: {
+                        name: 'Cooper',
+                        generations: {
+                            f56: { name: 'F56 2014 to 2024', fitment_id: 87 },
+                            r53: { name: 'R53 2002 to 2006', fitment_id: 42 },
+                            r56: { name: 'R56 2007 to 2013', fitment_id: 99 },
+                        },
+                    },
+                },
+            };
+            const api = buildReviewsApiWith([reviewItem({ fitment_id: 42 })], 5);
+            const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry });
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+            await flush();
+
+            // Click a non-garage vehicle (R53, 42) → takeover.
+            reviewBadges()[0].click();
+            await flush();
+            expect(lastReviewParams(api).fitment_id).toBe(42);
+            expect(reviewsChip().querySelector('.cs-fitment-showing')).not.toBeNull();
+
+            // Swap the garage to R56 (99): the click-filter is dropped and the
+            // view returns to the new garage's default (unfiltered).
+            global._set({
+                vehicle: { selected: { make: 'mini', model: 'cooper', generation: 'r56' } },
+                search: { data: { vehicle_registry: registry } },
+            });
+            await flush();
+
+            expect(lastReviewParams(api).fitment_id).toBe(99);
+            expect(lastReviewParams(api).fitment_only).toBeNull();
+            expect(reviewsChip().querySelector('.cs-fitment-showing')).toBeNull();
+        });
+    });
+
+    describe('questions', () => {
+        const mountQaScaffold = () => {
+            document.body.innerHTML = `
+                <div class="cs-questions-toolbar" data-questions-toolbar>
+                    <select data-questions-control="sort">
+                        <option value="date_desc">Newest</option>
+                    </select>
+                    <div class="cs-fitment-chip-slot" data-questions-fitment-chip></div>
+                </div>
+                <div id="product-questions"></div>
+                <div class="cs-questions-pagination" data-questions-pagination></div>
+            `;
+        };
+
+        beforeEach(() => {
+            mountQaScaffold();
+        });
+
+        it('filters the Q&A list to a clicked question vehicle', async () => {
+            const questionItems = [{
+                id: 1, author: 'A', body: 'b', fitment_id: 42, vehicle_label: 'MINI Cooper R53 2002 to 2006', staff_answer: 'ans',
+            }];
+            const api = {
+                getReviews: jest.fn(() => Promise.resolve(okEnvelope())),
+                getQuestions: jest.fn(() => Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    data: {
+                        items: questionItems, total: 1, page: 1, per_page: 10, fitment_question_count: 3,
+                    },
+                })),
+            };
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const badge = document.querySelector('#product-questions .cs-ugc-vehicle-badge');
+            expect(badge.tagName).toBe('BUTTON');
+            badge.click();
+            await flush();
+
+            const calls = api.getQuestions.mock.calls;
+            const last = calls[calls.length - 1][1];
+            expect(last.fitment_id).toBe(42);
+            expect(last.fitment_only).toBe(true);
+            expect(last.page).toBe(1);
+            expect(document.querySelector('[data-questions-fitment-chip] .cs-fitment-showing')).not.toBeNull();
+        });
+    });
+});
+
 describe('UgcProduct (slice 6e — submission modal)', () => {
     // A reviews + questions api that resolves both list fetches inertly, plus
     // injectable postReview/postQuestion spies for the submission paths.

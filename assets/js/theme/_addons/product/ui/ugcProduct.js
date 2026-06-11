@@ -196,6 +196,10 @@ const MESSAGES = {
 // is the resolver's label.
 const fitmentChipLabel = vehicle => `For your ${vehicle}`;
 
+// Active click-filter chip label (issue #45) — names the clicked review/question
+// vehicle that the list is currently restricted to.
+const showingChipLabel = vehicle => `Showing: ${vehicle}`;
+
 export default class UgcProduct {
     /**
      * @param {number|string} archetypeId - QTY archetype id, from the archetype
@@ -284,6 +288,14 @@ export default class UgcProduct {
         this.fitmentReviewCount = 0;
         this.fitmentQuestionCount = 0;
         this.reviewsLoaded = false;
+
+        // Click-to-filter overlay (issue #45): when the visitor clicks a
+        // review/question vehicle badge, this holds that badge's `fitment_id` +
+        // label and takes over the chip slot ("Showing: <vehicle>"), driving the
+        // same `fitment_only` query at the clicked fitment instead of the garage
+        // one. Null = no click-filter, so the garage chip behaves as before.
+        this.clickFilterId = null;
+        this.clickFilterLabel = null;
 
         // Init-race guard (Slice A review nit): a garage/registry change can fire
         // between seeding the fitment and the initial fetch completing, while
@@ -398,6 +410,7 @@ export default class UgcProduct {
         this.onLightboxClick = this.onLightboxClick.bind(this);
         this.onGalleryModalClick = this.onGalleryModalClick.bind(this);
         this.onFitmentChipClick = this.onFitmentChipClick.bind(this);
+        this.onVehicleBadgeClick = this.onVehicleBadgeClick.bind(this);
         this.onReviewVehicleChange = this.onReviewVehicleChange.bind(this);
         this.onQuestionVehicleChange = this.onQuestionVehicleChange.bind(this);
 
@@ -457,6 +470,16 @@ export default class UgcProduct {
         // survive every innerHTML re-render without rebinding (issue #30).
         if (this.listElement) {
             this.listElement.addEventListener('click', this.onMediaTileClick);
+        }
+
+        // Vehicle-badge clicks filter the lists to that review/question's vehicle
+        // (issue #45), delegated on each list so the badges survive re-renders.
+        if (this.listElement) {
+            this.listElement.addEventListener('click', this.onVehicleBadgeClick);
+        }
+
+        if (this.questionsElement) {
+            this.questionsElement.addEventListener('click', this.onVehicleBadgeClick);
         }
 
         if (this.mediaGridElement) {
@@ -1546,18 +1569,34 @@ export default class UgcProduct {
      * @returns {Object}
      */
     buildParams() {
-        // Gate fitment_only on a resolved fitment_id (Slice A review nit): the API
-        // requires fitment_id for fitment_only, so never send the flag without one.
-        const fitmentOnly = (this.fitmentOnly && this.fitmentId !== null) ? true : null;
+        const fitment = this._fitmentParams();
         return {
             page: this.query.page,
             sort: this.query.sort,
             rating: this.query.rating,
             verified: this.query.verified,
             media: this.query.media,
-            fitment_id: this.fitmentId,
-            fitment_only: fitmentOnly,
+            fitment_id: fitment.fitment_id,
+            fitment_only: fitment.fitment_only,
         };
+    }
+
+    /**
+     * Resolve the `fitment_id` + `fitment_only` to send on a list fetch. An
+     * active click-filter (a clicked review/question vehicle, issue #45) wins —
+     * it hard-filters at that fitment. Otherwise the garage fitment drives the
+     * query, with `fitment_only` gated on a resolved id (Slice A review nit: the
+     * API requires `fitment_id` for `fitment_only`, so never send the flag
+     * without one).
+     * @returns {{fitment_id: number|null, fitment_only: boolean|null}}
+     */
+    _fitmentParams() {
+        if (this.clickFilterId !== null) {
+            return { fitment_id: this.clickFilterId, fitment_only: true };
+        }
+
+        const fitmentOnly = (this.fitmentOnly && this.fitmentId !== null) ? true : null;
+        return { fitment_id: this.fitmentId, fitment_only: fitmentOnly };
     }
 
     renderPage(data) {
@@ -1655,8 +1694,12 @@ export default class UgcProduct {
         }
 
         // The new vehicle's chip starts unselected — the honest default is the
-        // unfiltered newest-first view (SRS §3.4.1).
+        // unfiltered newest-first view (SRS §3.4.1). A garage swap is a fresh
+        // vehicle context, so also drop any active click-to-filter takeover
+        // (issue #45) rather than leaving the view pinned to a clicked vehicle.
         this.fitmentOnly = false;
+        this.clickFilterId = null;
+        this.clickFilterLabel = null;
 
         // Before a list has loaded, the in-flight init fetch already captured the
         // prior params — defer the refetch until init completes rather than drop
@@ -1686,19 +1729,77 @@ export default class UgcProduct {
      */
     onFitmentChipClick(event) {
         const trigger = event.target.closest('[data-fitment-chip-toggle], [data-fitment-chip-clear]');
-        if (!trigger || this.fitmentId === null) {
+        if (!trigger) {
             return;
         }
 
         event.preventDefault();
 
         const isClear = trigger.dataset.fitmentChipClear !== undefined;
+
+        // Clearing while a clicked-vehicle filter is active drops back to the
+        // default view — the garage chip reappears (issue #45).
+        if (isClear && this.clickFilterId !== null) {
+            this.clickFilterId = null;
+            this.clickFilterLabel = null;
+            this.fitmentOnly = false;
+            this._refilter();
+            return;
+        }
+
+        // Garage chip toggle — needs a resolved garage fitment.
+        if (this.fitmentId === null) {
+            return;
+        }
+
         const nextOnly = !isClear;
         if (nextOnly === this.fitmentOnly) {
             return;
         }
 
         this.fitmentOnly = nextOnly;
+        this._refilter();
+    }
+
+    /**
+     * Filter both lists to a clicked review/question vehicle (issue #45). The
+     * badge carries the review's own `fitment_id` (SRS §3.2.1) — guaranteed
+     * present whenever the badge renders, since `vehicle_label` is null whenever
+     * `fitment_id` is. Clicking the visitor's own garage vehicle just activates
+     * the garage chip rather than a redundant "Showing:" takeover.
+     * @param {Event} event
+     */
+    onVehicleBadgeClick(event) {
+        const badge = event.target.closest('[data-fitment-filter]');
+        if (!badge) {
+            return;
+        }
+
+        event.preventDefault();
+
+        const fitmentId = parseInt(badge.dataset.fitmentFilter, 10);
+        if (!Number.isInteger(fitmentId) || fitmentId <= 0) {
+            return;
+        }
+
+        if (fitmentId === this.fitmentId) {
+            this.clickFilterId = null;
+            this.clickFilterLabel = null;
+            this.fitmentOnly = true;
+        } else {
+            this.clickFilterId = fitmentId;
+            this.clickFilterLabel = badge.dataset.fitmentLabel || '';
+        }
+
+        this._refilter();
+    }
+
+    /**
+     * Re-render both fitment chips and refetch both loaded lists from page 1
+     * under the current fitment filter (garage toggle or click-filter, issue
+     * #45). Composes with the active sort/rating/verified/media.
+     */
+    _refilter() {
         this.renderFitmentChip('reviews');
         this.renderFitmentChip('questions');
 
@@ -1727,6 +1828,18 @@ export default class UgcProduct {
             ? this.questionsFitmentChipElement
             : this.reviewsFitmentChipElement;
         if (!container) {
+            return;
+        }
+
+        // An active click-filter (a clicked review/question vehicle, issue #45)
+        // takes over the slot with a "Showing: <vehicle>" label + clear control,
+        // replacing the garage chip until cleared. Shown regardless of count —
+        // it is an explicit choice, not the count-gated discovery affordance.
+        if (this.clickFilterId !== null) {
+            const showing = this._escape(showingChipLabel(this.clickFilterLabel));
+            const clearControl = `<button type="button" class="cs-fitment-chip-clear" data-fitment-chip-clear aria-label="${this._escapeAttr(MESSAGES.fitmentChipClear)}">&times;</button>`;
+            container.innerHTML = `<span class="cs-fitment-showing">${showing}</span>${clearControl}`;
+            container.style.visibility = 'visible';
             return;
         }
 
@@ -1861,13 +1974,12 @@ export default class UgcProduct {
      * @returns {Object}
      */
     buildQuestionParams() {
-        // Gate fitment_only on a resolved fitment_id (Slice A review nit).
-        const fitmentOnly = (this.fitmentOnly && this.fitmentId !== null) ? true : null;
+        const fitment = this._fitmentParams();
         return {
             page: this.questionQuery.page,
             sort: this.questionQuery.sort,
-            fitment_id: this.fitmentId,
-            fitment_only: fitmentOnly,
+            fitment_id: fitment.fitment_id,
+            fitment_only: fitment.fitment_only,
         };
     }
 
@@ -1995,7 +2107,6 @@ export default class UgcProduct {
     _buildQuestion(question) {
         const author = this._escape(question.author) || MESSAGES.anonymous;
         const body = this._escape(question.body);
-        const vehicle = this._escape(question.vehicle_label);
         const date = this._formatDate(question.date);
         const answerAuthor = this._escape(question.staff_answer_author) || 'CravenSpeed';
         const answer = question.staff_answer
@@ -2008,7 +2119,7 @@ export default class UgcProduct {
                     <span class="cs-question-author">${author}</span>
                     ${date ? `<span class="cs-question-date">${date}</span>` : ''}
                 </p>
-                ${vehicle ? `<p class="cs-ugc-vehicle-badge cs-question-vehicle">${vehicle}</p>` : ''}
+                ${this._vehicleBadge(question.vehicle_label, question.fitment_id, 'cs-question-vehicle')}
                 <p class="cs-question-body">${body}</p>
                 ${answer}
             </article>`;
@@ -2504,7 +2615,7 @@ export default class UgcProduct {
             ? null
             : this.gridMedia[parseInt(dataset.ugcMediaIndex, 10)];
         if (entry && entry.review) {
-            review = `<div class="cs-ugc-lightbox-review">${this._buildReview(entry.review, false)}</div>`;
+            review = `<div class="cs-ugc-lightbox-review">${this._buildReview(entry.review, false, false)}</div>`;
         }
 
         content.innerHTML = media + review;
@@ -2572,11 +2683,38 @@ export default class UgcProduct {
         return count === 1 ? '1 review' : `${count} reviews`;
     }
 
-    _buildReview(review, includeMedia = true) {
+    /**
+     * Build a structured-vehicle badge (issue #45). When `clickable` and the
+     * item carries a positive `fitment_id`, it renders a `<button>` that filters
+     * the list to that vehicle on click; otherwise a static `<p>` (the SRS
+     * guarantees `vehicle_label` is null whenever `fitment_id` is, so that branch
+     * is also the defensive fallback). Empty string when there is no vehicle
+     * label. The lightbox review passes `clickable=false` — there is no list to
+     * filter from inside the media modal.
+     * @param {string} rawLabel - The item's `vehicle_label` (unescaped).
+     * @param {number|string} fitmentId - The item's `fitment_id`.
+     * @param {string} modifier - The card-specific class (cs-review-vehicle / cs-question-vehicle).
+     * @param {boolean} [clickable] - Whether the badge filters on click.
+     * @returns {string}
+     */
+    _vehicleBadge(rawLabel, fitmentId, modifier, clickable = true) {
+        const label = this._escape(rawLabel);
+        if (!label) {
+            return '';
+        }
+
+        const id = parseInt(fitmentId, 10);
+        if (clickable && Number.isInteger(id) && id > 0) {
+            return `<button type="button" class="cs-ugc-vehicle-badge ${modifier}" data-fitment-filter="${id}" data-fitment-label="${this._escapeAttr(rawLabel)}">${label}</button>`;
+        }
+
+        return `<p class="cs-ugc-vehicle-badge ${modifier}">${label}</p>`;
+    }
+
+    _buildReview(review, includeMedia = true, clickableVehicle = true) {
         const author = this._escape(review.author) || MESSAGES.anonymous;
         const title = this._escape(review.title);
         const body = this._escape(review.body);
-        const vehicle = this._escape(review.vehicle_label);
         const date = this._formatDate(review.date);
         const verified = review.verified_purchaser
             ? '<span class="cs-review-verified">Verified Purchaser</span>'
@@ -2609,7 +2747,7 @@ export default class UgcProduct {
                     ${verified}
                     ${edited}
                 </p>
-                ${vehicle ? `<p class="cs-ugc-vehicle-badge cs-review-vehicle">${vehicle}</p>` : ''}
+                ${this._vehicleBadge(review.vehicle_label, review.fitment_id, 'cs-review-vehicle', clickableVehicle)}
                 <p class="cs-review-body">${body}</p>
                 ${media}
                 ${staff}
@@ -2688,6 +2826,11 @@ export default class UgcProduct {
 
         if (this.listElement) {
             this.listElement.removeEventListener('click', this.onMediaTileClick);
+            this.listElement.removeEventListener('click', this.onVehicleBadgeClick);
+        }
+
+        if (this.questionsElement) {
+            this.questionsElement.removeEventListener('click', this.onVehicleBadgeClick);
         }
 
         if (this.mediaGridElement) {
