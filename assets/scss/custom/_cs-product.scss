@@ -25,6 +25,8 @@ $cs-product-max-width: 1440px;
 $cs-badge-max-width: 128px;
 $cs-modal-media-width: 220px;
 $cs-button-height: 50px;
+// Active fitment-chip accent — literal (no matching stencil token); ~5.1:1 on #fff.
+$cs-fitment-active: #06c;
 
 @mixin shimmer {
   background: #e0e0e0;
@@ -854,12 +856,23 @@ $cs-button-height: 50px;
   color: stencilColor('color-textBase');
   font-size: 0.875rem;
   font-weight: 600;
+  line-height: 1;
   cursor: pointer;
 
   &.is-active {
-    border-color: stencilColor('color-primary');
-    background: stencilColor('color-primary');
-    color: stencilColor('color-textInverse');
+    border-color: $cs-fitment-active;
+    background: $cs-fitment-active;
+    color: #fff;
+
+    .cs-fitment-chip-count {
+      background: #fff;
+      color: $cs-fitment-active;
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid stencilColor('color-primary');
+    outline-offset: 2px;
   }
 }
 
@@ -873,6 +886,7 @@ $cs-button-height: 50px;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.08);
   font-size: 0.75rem;
+  line-height: 1;
 }
 
 .cs-fitment-chip-clear {
@@ -888,6 +902,11 @@ $cs-button-height: 50px;
   font-size: 1.25rem;
   line-height: 1;
   cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid stencilColor('color-primary');
+    outline-offset: 2px;
+  }
 }
 
 // Visuals come from the shared .cs-form-select class (the add-to-cart option
@@ -1042,15 +1061,17 @@ $cs-button-height: 50px;
 // system-generated `vehicle_label` (e.g. 'MINI Cooper F56'), display-only.
 // Absent entirely when the item has no vehicle, so no space is reserved.
 .cs-ugc-vehicle-badge {
-  display: inline-flex;
-  align-items: center;
+  display: inline-block;
   max-width: 100%;
   padding: 0.125rem spacing('half');
   border: 1px solid stencilColor('color-textSecondary');
   border-radius: 999px;
+  overflow: hidden;
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .cs-review-vehicle {
