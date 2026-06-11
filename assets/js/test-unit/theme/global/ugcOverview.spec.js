@@ -284,3 +284,110 @@ describe('UgcOverview controller', () => {
         expect(document.querySelector('.cs-ugc-vehicle-badge')).toBeNull();
     });
 });
+
+describe('UgcOverview review lightbox', () => {
+    let api;
+    let overview;
+
+    beforeEach(() => {
+        document.body.innerHTML = '<div class="cs-ugc-overview" data-ugc-overview></div>';
+        api = { getOverview: jest.fn() };
+    });
+
+    afterEach(() => {
+        if (overview) {
+            overview.destroy();
+            overview = null;
+        }
+        document.querySelectorAll('[data-ugc-overview-lightbox]').forEach(el => el.remove());
+    });
+
+    const mountInit = async (reviews) => {
+        api.getOverview.mockResolvedValue(okResult(reviews));
+        overview = new UgcOverview({ api });
+        await overview.init();
+        return overview;
+    };
+
+    it('renders media thumbs as buttons carrying their filtered index', async () => {
+        await mountInit(makeReviews(10, { withMediaEvery: 5 }));
+
+        const openers = document.querySelectorAll('[data-ugc-review-open]');
+        expect(Array.from(openers).map(b => b.dataset.ugcIndex)).toEqual(['0', '5']);
+        expect(document.querySelectorAll('button.cs-ugc-overview-thumb')).toHaveLength(2);
+        // No-media thumbs stay non-interactive divs, not openers.
+        expect(document.querySelectorAll('div.cs-ugc-overview-thumb.is-empty')).toHaveLength(8);
+    });
+
+    it('opens the clicked review and steps through the filtered set, incl. no-photo reviews', async () => {
+        await mountInit(makeReviews(10, { withMediaEvery: 5 }));
+
+        document.querySelector('[data-ugc-review-open][data-ugc-index="5"]').click();
+        const lightbox = document.querySelector('[data-ugc-overview-lightbox]');
+        expect(lightbox.hidden).toBe(false);
+        expect(lightbox.textContent).toContain('Body 6');
+
+        // Next lands on a review with no photo — still reachable (Decision A).
+        lightbox.querySelector('[data-ugc-review-next]').click();
+        expect(lightbox.textContent).toContain('Body 7');
+
+        lightbox.querySelector('[data-ugc-review-prev]').click();
+        lightbox.querySelector('[data-ugc-review-prev]').click();
+        expect(lightbox.textContent).toContain('Body 5');
+    });
+
+    it('disables prev at the first review and next at the last', async () => {
+        await mountInit(makeReviews(3));
+
+        overview.openLightbox(0);
+        const lightbox = document.querySelector('[data-ugc-overview-lightbox]');
+        const prev = lightbox.querySelector('[data-ugc-review-prev]');
+        const next = lightbox.querySelector('[data-ugc-review-next]');
+        expect(prev.disabled).toBe(true);
+        expect(next.disabled).toBe(false);
+
+        next.click(); // index 1
+        next.click(); // index 2 (last)
+        expect(next.disabled).toBe(true);
+        expect(prev.disabled).toBe(false);
+    });
+
+    it('steps only within the active filter', async () => {
+        await mountInit(makeReviews(25, { withMediaEvery: 5 }));
+
+        document.querySelector('[data-ugc-filter="photos"]').click();
+        // 5 media reviews (ids 1, 6, 11, 16, 21) collapse to filtered indices 0..4.
+        document.querySelector('[data-ugc-review-open][data-ugc-index="0"]').click();
+        const lightbox = document.querySelector('[data-ugc-overview-lightbox]');
+        expect(lightbox.textContent).toContain('Body 1');
+
+        lightbox.querySelector('[data-ugc-review-next]').click();
+        // The next media review, not the immediately-following no-photo one.
+        expect(lightbox.textContent).toContain('Body 6');
+    });
+
+    it('closes via the close control and restores focus to the opening thumb', async () => {
+        await mountInit(makeReviews(5, { withMediaEvery: 5 }));
+
+        const opener = document.querySelector('[data-ugc-review-open]');
+        opener.focus();
+        opener.click();
+        const lightbox = document.querySelector('[data-ugc-overview-lightbox]');
+        expect(lightbox.hidden).toBe(false);
+
+        lightbox.querySelector('[data-ugc-lightbox-close]').click();
+        expect(lightbox.hidden).toBe(true);
+        expect(document.activeElement).toBe(opener);
+    });
+
+    it('closes on Escape', async () => {
+        await mountInit(makeReviews(5, { withMediaEvery: 5 }));
+
+        document.querySelector('[data-ugc-review-open]').click();
+        const lightbox = document.querySelector('[data-ugc-overview-lightbox]');
+        expect(lightbox.hidden).toBe(false);
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(lightbox.hidden).toBe(true);
+    });
+});

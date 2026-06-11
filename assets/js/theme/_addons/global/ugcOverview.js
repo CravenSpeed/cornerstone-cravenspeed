@@ -132,7 +132,16 @@ export default class UgcOverview {
         this.ratingValue = null;
         this.page = 1;
 
+        // Review lightbox state. The node is created lazily on first open and
+        // lives on <body>, outside the wall's innerHTML churn. lightboxIndex is
+        // an absolute index into the current filtered set (Decision A).
+        this.lightbox = null;
+        this.lightboxIndex = 0;
+        this.lastFocused = null;
+
         this.handleControlClick = this.handleControlClick.bind(this);
+        this.handleLightboxClick = this.handleLightboxClick.bind(this);
+        this.handleLightboxKeydown = this.handleLightboxKeydown.bind(this);
     }
 
     /**
@@ -166,6 +175,12 @@ export default class UgcOverview {
      * @param {MouseEvent} event
      */
     handleControlClick(event) {
+        const opener = event.target.closest('[data-ugc-review-open]');
+        if (opener) {
+            this.openLightbox(parseInt(opener.dataset.ugcIndex, 10));
+            return;
+        }
+
         const filterButton = event.target.closest('[data-ugc-filter]');
         if (filterButton) {
             const { ugcFilter, ugcRating } = filterButton.dataset;
@@ -189,10 +204,11 @@ export default class UgcOverview {
     render() {
         const filtered = applyFilter(this.reviews, this.filter, this.ratingValue);
         const items = paginate(filtered, this.page);
+        const base = (this.page - 1) * PER_PAGE;
 
         this.container.innerHTML = `
             ${this.buildFilters()}
-            ${this.buildWall(items)}
+            ${this.buildWall(items, base)}
             ${this.buildPagination(filtered.length)}
         `;
     }
@@ -223,16 +239,16 @@ export default class UgcOverview {
         return `<div class="cs-ugc-overview-filters" role="group" aria-label="Filter reviews">${buttons}</div>`;
     }
 
-    buildWall(items) {
+    buildWall(items, base) {
         if (items.length === 0) {
             return '<p class="cs-ugc-overview-empty">No reviews to show yet.</p>';
         }
 
-        const cards = items.map(review => this.buildCard(review)).join('');
+        const cards = items.map((review, i) => this.buildCard(review, base + i)).join('');
         return `<div class="cs-ugc-overview-wall">${cards}</div>`;
     }
 
-    buildCard(review) {
+    buildCard(review, index) {
         const author = escapeHtml(review.author);
         const title = escapeHtml(review.title);
         const body = escapeHtml(review.body);
@@ -243,7 +259,7 @@ export default class UgcOverview {
 
         return `
             <article class="cs-ugc-overview-card">
-                ${this.buildThumb(review)}
+                ${this.buildThumb(review, index)}
                 <div class="cs-ugc-overview-card-body">
                     <div class="cs-ugc-overview-stars" role="img" aria-label="${rating} out of ${MAX_STARS} stars">${stars}</div>
                     ${title ? `<h3 class="cs-ugc-overview-title">${title}</h3>` : ''}
@@ -262,11 +278,14 @@ export default class UgcOverview {
      * Render the first media item as the card thumbnail. Photos use the
      * thumbnail URL; videos fall back to the poster (SRS §3.2.7 / ReviewMedia).
      * The thumb slot reserves space even with no media so the wall stays
-     * layout-stable.
+     * layout-stable. When the review carries a photo the thumb is a button that
+     * opens the review in the lightbox; the `index` is its absolute position in
+     * the current filtered set, which the lightbox steps through.
      * @param {Object} review
+     * @param {number} index
      * @returns {string}
      */
-    buildThumb(review) {
+    buildThumb(review, index) {
         if (!hasMedia(review)) {
             return '<div class="cs-ugc-overview-thumb is-empty" aria-hidden="true"></div>';
         }
@@ -280,9 +299,9 @@ export default class UgcOverview {
 
         const alt = escapeHtml(review.title || review.archetype_name || 'Customer photo');
         return `
-            <div class="cs-ugc-overview-thumb">
+            <button type="button" class="cs-ugc-overview-thumb" data-ugc-review-open data-ugc-index="${index}" aria-label="Open this review">
                 <img src="${escapeHtml(src)}" alt="${alt}" loading="lazy" width="200" height="200">
-            </div>
+            </button>
         `;
     }
 
@@ -302,9 +321,237 @@ export default class UgcOverview {
         `;
     }
 
+    /**
+     * The absolute-index list the lightbox steps through: the active filter
+     * applied to the full feed, in display order (Decision A — includes reviews
+     * without photos). A thumb's data-ugc-index points into this same list.
+     * @returns {Object[]}
+     */
+    filteredReviews() {
+        return applyFilter(this.reviews, this.filter, this.ratingValue);
+    }
+
+    /**
+     * Lazily create the single lightbox node (appended to <body>, outside the
+     * wall's innerHTML churn) and wire its delegated click handler. Reuses the
+     * .cs-ugc-modal / .cs-ugc-lightbox shell from _cs-product.scss.
+     * @returns {HTMLElement}
+     */
+    ensureLightbox() {
+        if (this.lightbox) {
+            return this.lightbox;
+        }
+
+        const el = document.createElement('div');
+        el.className = 'cs-ugc-modal cs-ugc-overview-lightbox';
+        el.dataset.ugcOverviewLightbox = '';
+        el.hidden = true;
+        el.innerHTML = `
+            <div class="cs-ugc-modal-overlay" data-ugc-lightbox-close></div>
+            <div class="cs-ugc-modal-dialog cs-ugc-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Customer review">
+                <button type="button" class="cs-ugc-modal-close" data-ugc-lightbox-close aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                <button type="button" class="cs-ugc-lightbox-arrow cs-ugc-lightbox-arrow--prev" data-ugc-review-prev aria-label="Previous review"><span aria-hidden="true">&lsaquo;</span></button>
+                <button type="button" class="cs-ugc-lightbox-arrow cs-ugc-lightbox-arrow--next" data-ugc-review-next aria-label="Next review"><span aria-hidden="true">&rsaquo;</span></button>
+                <div class="cs-ugc-overview-lightbox-content" data-ugc-lightbox-content></div>
+            </div>
+        `;
+
+        document.body.appendChild(el);
+        el.addEventListener('click', this.handleLightboxClick);
+        this.lightbox = el;
+        return el;
+    }
+
+    /**
+     * Open the lightbox at an absolute index into the filtered set and start
+     * keyboard navigation. Out-of-range indices are ignored.
+     * @param {number} index
+     */
+    openLightbox(index) {
+        const reviews = this.filteredReviews();
+        if (!Number.isInteger(index) || index < 0 || index >= reviews.length) {
+            return;
+        }
+
+        this.lastFocused = document.activeElement;
+        this.lightboxIndex = index;
+
+        const el = this.ensureLightbox();
+        this.renderLightbox();
+        el.hidden = false;
+        document.addEventListener('keydown', this.handleLightboxKeydown);
+
+        const close = el.querySelector('[data-ugc-lightbox-close]');
+        if (close) {
+            close.focus();
+        }
+    }
+
+    /**
+     * Step the lightbox by delta within the filtered set, clamped to its ends
+     * (no wrap — the arrows disable at the boundaries).
+     * @param {number} delta
+     */
+    navigateLightbox(delta) {
+        const reviews = this.filteredReviews();
+        const target = this.lightboxIndex + delta;
+        if (target < 0 || target >= reviews.length) {
+            return;
+        }
+
+        this.lightboxIndex = target;
+        this.renderLightbox();
+    }
+
+    /**
+     * Paint the current review into the lightbox and set the arrow disabled
+     * states for the current position.
+     */
+    renderLightbox() {
+        if (!this.lightbox) {
+            return;
+        }
+
+        const reviews = this.filteredReviews();
+        const review = reviews[this.lightboxIndex];
+        if (!review) {
+            return;
+        }
+
+        const content = this.lightbox.querySelector('[data-ugc-lightbox-content]');
+        content.innerHTML = this.buildLightboxMedia(review) + this.buildLightboxReview(review);
+        content.scrollTop = 0;
+
+        const prev = this.lightbox.querySelector('[data-ugc-review-prev]');
+        const next = this.lightbox.querySelector('[data-ugc-review-next]');
+        prev.disabled = this.lightboxIndex <= 0;
+        next.disabled = this.lightboxIndex >= reviews.length - 1;
+    }
+
+    /**
+     * Hide the lightbox, clear its content (which also stops a playing video),
+     * stop keyboard navigation, and restore focus to the thumb that opened it.
+     */
+    closeLightbox() {
+        if (!this.lightbox || this.lightbox.hidden) {
+            return;
+        }
+
+        this.lightbox.hidden = true;
+        const content = this.lightbox.querySelector('[data-ugc-lightbox-content]');
+        if (content) {
+            content.innerHTML = '';
+        }
+
+        document.removeEventListener('keydown', this.handleLightboxKeydown);
+
+        if (this.lastFocused && typeof this.lastFocused.focus === 'function') {
+            this.lastFocused.focus();
+        }
+        this.lastFocused = null;
+    }
+
+    /**
+     * All of a review's media, stacked and rendered large (photo → medium/url,
+     * video → playable with its poster). Reviews without media render no media
+     * block — the text still shows, so arrow navigation never dead-ends on a
+     * no-photo review (SRS §3.2.1 safe media fields).
+     * @param {Object} review
+     * @returns {string}
+     */
+    buildLightboxMedia(review) {
+        if (!hasMedia(review)) {
+            return '';
+        }
+
+        const items = review.media.map((media) => {
+            const label = escapeHtml(review.title || review.archetype_name || 'Customer media');
+
+            if (media.type === 'video') {
+                const videoSrc = escapeHtml(media.url || '');
+                const poster = media.poster_url ? ` poster="${escapeHtml(media.poster_url)}"` : '';
+                return `<video class="cs-ugc-lightbox-video" src="${videoSrc}"${poster} controls playsinline aria-label="${label}"></video>`;
+            }
+
+            const imgSrc = escapeHtml(media.medium_url || media.url || media.thumb_url || '');
+            return `<img class="cs-ugc-lightbox-img" src="${imgSrc}" alt="${label}" loading="lazy">`;
+        }).join('');
+
+        return `<div class="cs-ugc-overview-lightbox-media">${items}</div>`;
+    }
+
+    /**
+     * The review's text content, mirroring the wall card (stars, title, vehicle
+     * badge, body, author + product link) but laid out for the wider lightbox.
+     * @param {Object} review
+     * @returns {string}
+     */
+    buildLightboxReview(review) {
+        const author = escapeHtml(review.author);
+        const title = escapeHtml(review.title);
+        const body = escapeHtml(review.body);
+        const archetypeName = escapeHtml(review.archetype_name);
+        const archetypeUrl = escapeHtml(review.archetype_url);
+        const rating = parseInt(review.rating, 10) || 0;
+        const stars = buildStarIcons(rating);
+
+        return `
+            <div class="cs-ugc-overview-lightbox-review">
+                <div class="cs-ugc-overview-stars" role="img" aria-label="${rating} out of ${MAX_STARS} stars">${stars}</div>
+                ${title ? `<h3 class="cs-ugc-overview-lightbox-title">${title}</h3>` : ''}
+                ${buildVehicleBadge(review.vehicle_label)}
+                <p class="cs-ugc-overview-text">${body}</p>
+                <p class="cs-ugc-overview-meta">
+                    <span class="cs-ugc-overview-author">${author}</span>
+                    ${archetypeUrl ? `<a class="cs-ugc-overview-product" href="${archetypeUrl}">${archetypeName}</a>` : ''}
+                </p>
+            </div>
+        `;
+    }
+
+    handleLightboxClick(event) {
+        if (event.target.closest('[data-ugc-lightbox-close]')) {
+            this.closeLightbox();
+            return;
+        }
+
+        if (event.target.closest('[data-ugc-review-prev]')) {
+            this.navigateLightbox(-1);
+            return;
+        }
+
+        if (event.target.closest('[data-ugc-review-next]')) {
+            this.navigateLightbox(1);
+        }
+    }
+
+    handleLightboxKeydown(event) {
+        switch (event.key) {
+        case 'Escape':
+            this.closeLightbox();
+            break;
+        case 'ArrowLeft':
+            this.navigateLightbox(-1);
+            break;
+        case 'ArrowRight':
+            this.navigateLightbox(1);
+            break;
+        default:
+            break;
+        }
+    }
+
     destroy() {
         if (this.container) {
             this.container.removeEventListener('click', this.handleControlClick);
+        }
+
+        document.removeEventListener('keydown', this.handleLightboxKeydown);
+
+        if (this.lightbox) {
+            this.lightbox.removeEventListener('click', this.handleLightboxClick);
+            this.lightbox.remove();
+            this.lightbox = null;
         }
     }
 }

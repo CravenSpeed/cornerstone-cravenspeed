@@ -2938,6 +2938,8 @@ describe('UgcProduct (#30 — review media display)', () => {
             <div data-ugc-lightbox hidden>
                 <div data-ugc-lightbox-close></div>
                 <button type="button" data-ugc-lightbox-close>&times;</button>
+                <button type="button" data-ugc-lightbox-prev hidden>&lsaquo;</button>
+                <button type="button" data-ugc-lightbox-next hidden>&rsaquo;</button>
                 <div data-ugc-lightbox-content></div>
             </div>
             <div data-ugc-gallery hidden>
@@ -3435,6 +3437,66 @@ describe('UgcProduct (#30 — review media display)', () => {
 
             expect(lightbox().hidden).toBe(true);
             expect(lightboxContent().innerHTML).toEqual('');
+        });
+
+        it('shows prev/next arrows from a band tile and steps the photo set, clamped at the ends', async () => {
+            const r1 = reviewWith([photoMedia({ id: 1, medium_url: 'https://cdn.example/a.jpg' })], { id: 1, author: 'Alice', body: 'Body A' });
+            const r2 = reviewWith([photoMedia({ id: 2, medium_url: 'https://cdn.example/b.jpg' })], { id: 2, author: 'Bob', body: 'Body B' });
+            const api = buildApi(okEnvelope({ items: [r1, r2], total: 2 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            grid().querySelector('[data-ugc-media-tile]').click();
+            const prev = lightbox().querySelector('[data-ugc-lightbox-prev]');
+            const next = lightbox().querySelector('[data-ugc-lightbox-next]');
+            expect(prev.hidden).toBe(false);
+            expect(next.hidden).toBe(false);
+            expect(prev.disabled).toBe(true); // first entry
+            expect(next.disabled).toBe(false);
+            expect(lightboxContent().textContent).toContain('Body A');
+
+            next.click();
+            expect(lightboxContent().querySelector('img').getAttribute('src')).toEqual('https://cdn.example/b.jpg');
+            expect(lightboxContent().textContent).toContain('Body B');
+            expect(next.disabled).toBe(true); // last entry
+            expect(prev.disabled).toBe(false);
+
+            prev.click();
+            expect(lightboxContent().textContent).toContain('Body A');
+        });
+
+        it('keeps arrows hidden when opened from a per-review strip tile, even with multiple photos in the set', async () => {
+            const r1 = reviewWith([photoMedia({ id: 1 })], { id: 1, author: 'Alice', body: 'Body A' });
+            const r2 = reviewWith([photoMedia({ id: 2 })], { id: 2, author: 'Bob', body: 'Body B' });
+            const api = buildApi(okEnvelope({ items: [r1, r2], total: 2 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            // A strip tile inside #product-reviews carries no media index → no nav.
+            document.querySelector('#product-reviews [data-ugc-media-tile]').click();
+            expect(lightbox().querySelector('[data-ugc-lightbox-prev]').hidden).toBe(true);
+            expect(lightbox().querySelector('[data-ugc-lightbox-next]').hidden).toBe(true);
+            expect(lightboxContent().querySelector('.cs-ugc-lightbox-review')).toBeNull();
+        });
+
+        it('navigates with arrow keys and closes on Escape', async () => {
+            const r1 = reviewWith([photoMedia({ id: 1, medium_url: 'https://cdn.example/a.jpg' })], { id: 1, body: 'Body A' });
+            const r2 = reviewWith([photoMedia({ id: 2, medium_url: 'https://cdn.example/b.jpg' })], { id: 2, body: 'Body B' });
+            const api = buildApi(okEnvelope({ items: [r1, r2], total: 2 }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            grid().querySelector('[data-ugc-media-tile]').click();
+            expect(lightboxContent().textContent).toContain('Body A');
+
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+            expect(lightboxContent().textContent).toContain('Body B');
+
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+            expect(lightboxContent().textContent).toContain('Body A');
+
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+            expect(lightbox().hidden).toBe(true);
         });
     });
 
