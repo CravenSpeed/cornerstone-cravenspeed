@@ -1184,6 +1184,27 @@ describe('UgcProduct (issue #45 — click a vehicle badge to filter)', () => {
             expect(lightbox).not.toContain('data-fitment-filter');
         });
 
+        it('escapes a vehicle_label with quotes/angle brackets through the data attr and the takeover chip', async () => {
+            const label = '26" Wheels <script>';
+            const api = buildReviewsApiWith([reviewItem({ fitment_id: 42, vehicle_label: label })], 4);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            // The badge label is inert text, and the raw label round-trips
+            // through the escaped data attribute (the browser decodes it back).
+            const badge = reviewBadges()[0];
+            expect(badge.querySelector('script')).toBeNull();
+            expect(badge.dataset.fitmentLabel).toBe(label);
+
+            badge.click();
+            await flush();
+
+            // The "Showing:" takeover chip renders the label as text, not markup.
+            const showing = reviewsChip().querySelector('.cs-fitment-showing');
+            expect(showing.querySelector('script')).toBeNull();
+            expect(showing.textContent).toBe(`Showing: ${label}`);
+        });
+
         it('filters to the clicked vehicle (fitment_only + that fitment_id, page 1) on badge click', async () => {
             const api = buildReviewsApiWith([reviewItem({ fitment_id: 42 })], 4);
             new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
