@@ -928,6 +928,25 @@ $cs-fitment-active-hover: #05a;
   }
 }
 
+// Active click-filter label (issue #45): when a customer clicks a review/question
+// vehicle badge, this replaces the garage chip with "Showing: <vehicle>". Mirrors
+// the active chip's blue pill but is non-interactive — the adjacent
+// .cs-fitment-chip-clear button (a sibling in the slot) drops the filter.
+.cs-fitment-showing {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 spacing('half');
+  border-radius: 999px;
+  background: $cs-fitment-active;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 // Visuals come from the shared .cs-form-select class (the add-to-cart option
 // dropdowns) on the same element — identical by construction.
 
@@ -1100,6 +1119,27 @@ $cs-fitment-active-hover: #05a;
   line-height: 1.4;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+// Card badges are clickable buttons (issue #45) — filtering the list to that
+// review/question's vehicle. Reset the button chrome the shared rule above
+// doesn't cover, and deepen to the same hover blue as the active fitment chip.
+// Only buttons match, so the home overview-wall <p> badge stays static. (A
+// <button> also sidesteps the `.cs-product-container p` reset entirely.)
+button.cs-ugc-vehicle-badge {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: $cs-fitment-active-hover;
+  }
+
+  &:focus-visible {
+    outline: 2px solid stencilColor('color-primary');
+    outline-offset: 2px;
+  }
 }
 
 .cs-review .cs-review-vehicle {
