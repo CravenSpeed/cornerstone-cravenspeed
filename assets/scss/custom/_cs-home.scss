@@ -359,6 +359,7 @@
   height: 44px;
   padding: 0 spacing('half');
   border: 1px solid stencilColor('color-greyLightest');
+  border-radius: spacing('half'); // matches .cs-product-archetype button (_custom.scss:59)
   background: stencilColor('color-white');
   color: stencilColor('color-textBase');
   cursor: pointer;

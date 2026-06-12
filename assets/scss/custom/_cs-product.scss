@@ -1073,6 +1073,20 @@ $cs-fitment-active-hover: #05a;
   }
 }
 
+// Per-item side gutter for the reviews / Q&A content blocks (mirrors .pdpRow's
+// approach — the gutter lives on the content piece itself, not a shared wrapper,
+// so any single item can still opt into full width). Padding rather than margin
+// because the medium rule centers these via margin: 0 auto. Mobile-first: half
+// on mobile, single from the medium breakpoint up.
+.cs-reviews,
+.cs-questions {
+  padding: 0 spacing('half');
+
+  @include breakpoint('medium') {
+    padding: 0 spacing('single');
+  }
+}
+
 // Contrast pass: full stars keep the theme fill (brand red in the active
 // CravenSpeed variation); empties lighten so full vs empty separate cleanly.
 // Meta text steps up to greyDark below.

@@ -1903,6 +1903,14 @@ export default class UgcProduct {
         }
 
         this._refilter();
+
+        // The filter resets the list to page 1, so the reader would otherwise be
+        // stranded mid-list — bring the clicked card's section header into view,
+        // matching the bottom page controls' scroll.
+        const anchor = badge.classList.contains('cs-question-vehicle')
+            ? this.questionsToolbarElement
+            : this.toolbarElement;
+        this._scrollSectionToTop(anchor);
     }
 
     /**
