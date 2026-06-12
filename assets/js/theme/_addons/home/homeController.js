@@ -15,7 +15,7 @@ export default class HomeController extends PageManager {
             showAllText: 'Show All Products',
             showLessText: 'Show Less',
         });
-        this.ugcOverview = new UgcOverview();
+        this.ugcOverview = new UgcOverview({ globalStateManager: StateManager });
         this.searchEngine = null;
         this.searchDataVersion = null;
         this.currentSelection = null;

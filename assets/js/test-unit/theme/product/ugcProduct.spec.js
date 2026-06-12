@@ -93,8 +93,9 @@ const mountScaffold = () => {
             <input type="checkbox" data-reviews-control="media">
             <div class="cs-fitment-chip-slot" data-reviews-fitment-chip></div>
         </div>
+        <div class="cs-reviews-pagination cs-reviews-pagination--top" data-reviews-pagination></div>
         <div id="product-reviews"></div>
-        <div class="cs-reviews-pagination" data-reviews-pagination></div>
+        <div class="cs-reviews-pagination cs-reviews-pagination--bottom" data-reviews-pagination></div>
     `;
 };
 
@@ -471,11 +472,43 @@ describe('UgcProduct (slice 6b — sort, filter, pagination)', () => {
             new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
             await flush();
 
-            // 25 / 10 => ceil 3 numbered pages.
-            const numbered = document.querySelectorAll('[data-page-key="1"], [data-page-key="2"], [data-page-key="3"]');
+            // 25 / 10 => ceil 3 numbered pages, scoped to one container.
+            const bottom = document.querySelector('.cs-reviews-pagination--bottom');
+            const numbered = bottom.querySelectorAll('[data-page-key="1"], [data-page-key="2"], [data-page-key="3"]');
             expect(numbered).toHaveLength(3);
-            expect(document.querySelector('[data-reviews-page="2"]')).not.toBeNull();
-            expect(document.querySelector('[data-reviews-page="4"]')).toBeNull();
+            expect(bottom.querySelector('[data-reviews-page="2"]')).not.toBeNull();
+            expect(bottom.querySelector('[data-reviews-page="4"]')).toBeNull();
+        });
+
+        it('paints the same controls into both the top and bottom containers', async () => {
+            const api = buildApi(okEnvelope({ total: 25, page: 1, per_page: 10, items: [{ id: 1, rating: 5, date: '2026-01-01' }] }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const navs = document.querySelectorAll('[data-reviews-pagination] .cs-reviews-pages');
+            expect(navs).toHaveLength(2);
+            document.querySelectorAll('[data-reviews-pagination]').forEach((container) => {
+                expect(container.querySelectorAll('[data-page-key]')).toHaveLength(5);
+                expect(container.style.visibility).toBe('visible');
+            });
+            // Distinct landmark names (axe landmark-unique).
+            const labels = Array.from(navs).map(n => n.getAttribute('aria-label'));
+            expect(new Set(labels).size).toBe(2);
+        });
+
+        it('clicking the top controls pages the list just like the bottom', async () => {
+            const api = buildSequencedApi([
+                okEnvelope({ total: 25, page: 1, per_page: 10 }),
+                okEnvelope({ total: 25, page: 2, per_page: 10 }),
+            ]);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('.cs-reviews-pagination--top [data-reviews-page="2"]').click();
+            await flush();
+
+            expect(api.getReviews).toHaveBeenCalledTimes(2);
+            expect(paramsOfCall(api, 2).page).toBe(2);
         });
 
         it('hides pagination when a single page covers all results', async () => {
@@ -512,6 +545,35 @@ describe('UgcProduct (slice 6b — sort, filter, pagination)', () => {
             await flush();
 
             expect(api.getReviews).toHaveBeenCalledTimes(1);
+        });
+
+        it('smoothly scrolls the list header into view on a page change', async () => {
+            const api = buildSequencedApi([
+                okEnvelope({ total: 25, page: 1, per_page: 10 }),
+                okEnvelope({ total: 25, page: 2, per_page: 10 }),
+            ]);
+            const toolbar = document.querySelector('[data-reviews-toolbar]');
+            toolbar.scrollIntoView = jest.fn();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-reviews-page="2"]').click();
+            await flush();
+
+            expect(toolbar.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+        });
+
+        it('does not scroll when the clicked page is already current', async () => {
+            const api = buildApi(okEnvelope({ total: 25, page: 1, per_page: 10 }));
+            const toolbar = document.querySelector('[data-reviews-toolbar]');
+            toolbar.scrollIntoView = jest.fn();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-reviews-page="1"]').click();
+            await flush();
+
+            expect(toolbar.scrollIntoView).not.toHaveBeenCalled();
         });
     });
 
@@ -613,8 +675,9 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
                 </select>
                 <div class="cs-fitment-chip-slot" data-questions-fitment-chip></div>
             </div>
+            <div class="cs-questions-pagination cs-questions-pagination--top" data-questions-pagination></div>
             <div id="product-questions"></div>
-            <div class="cs-questions-pagination" data-questions-pagination></div>
+            <div class="cs-questions-pagination cs-questions-pagination--bottom" data-questions-pagination></div>
         `;
     };
 
@@ -793,10 +856,47 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
             new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
             await flush();
 
-            const numbered = document.querySelectorAll('[data-page-key="1"], [data-page-key="2"], [data-page-key="3"]');
+            // 25 / 10 => ceil 3 numbered pages, scoped to one container.
+            const bottom = document.querySelector('.cs-questions-pagination--bottom');
+            const numbered = bottom.querySelectorAll('[data-page-key="1"], [data-page-key="2"], [data-page-key="3"]');
             expect(numbered).toHaveLength(3);
-            expect(document.querySelector('[data-questions-page="2"]')).not.toBeNull();
-            expect(document.querySelector('[data-questions-page="4"]')).toBeNull();
+            expect(bottom.querySelector('[data-questions-page="2"]')).not.toBeNull();
+            expect(bottom.querySelector('[data-questions-page="4"]')).toBeNull();
+        });
+
+        it('paints the same controls into both the top and bottom containers', async () => {
+            const api = buildQaApi(okQuestions({
+                total: 25,
+                page: 1,
+                per_page: 10,
+                items: [{ id: 1, body: 'Q?', date: '2026-01-01' }],
+            }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const navs = document.querySelectorAll('[data-questions-pagination] .cs-questions-pages');
+            expect(navs).toHaveLength(2);
+            document.querySelectorAll('[data-questions-pagination]').forEach((container) => {
+                expect(container.querySelectorAll('[data-page-key]')).toHaveLength(5);
+                expect(container.style.visibility).toBe('visible');
+            });
+            const labels = Array.from(navs).map(n => n.getAttribute('aria-label'));
+            expect(new Set(labels).size).toBe(2);
+        });
+
+        it('clicking the top controls pages the list just like the bottom', async () => {
+            const api = buildSequencedQaApi([
+                okQuestions({ total: 25, page: 1, per_page: 10 }),
+                okQuestions({ total: 25, page: 2, per_page: 10 }),
+            ]);
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('.cs-questions-pagination--top [data-questions-page="2"]').click();
+            await flush();
+
+            expect(api.getQuestions).toHaveBeenCalledTimes(2);
+            expect(qParamsOfCall(api, 2).page).toBe(2);
         });
 
         it('hides pagination when a single page covers all results', async () => {
@@ -833,6 +933,22 @@ describe('UgcProduct (slice 6c — Q&A tab)', () => {
             await flush();
 
             expect(api.getQuestions).toHaveBeenCalledTimes(1);
+        });
+
+        it('smoothly scrolls the list header into view on a page change', async () => {
+            const api = buildSequencedQaApi([
+                okQuestions({ total: 25, page: 1, per_page: 10 }),
+                okQuestions({ total: 25, page: 2, per_page: 10 }),
+            ]);
+            const toolbar = document.querySelector('[data-questions-toolbar]');
+            toolbar.scrollIntoView = jest.fn();
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            document.querySelector('[data-questions-page="2"]').click();
+            await flush();
+
+            expect(toolbar.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
         });
     });
 

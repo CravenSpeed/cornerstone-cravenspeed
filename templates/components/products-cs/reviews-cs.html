@@ -43,8 +43,12 @@
             {{lang 'products.reviews.submit.open'}}
         </button>
     </div>
+    {{!-- Page controls are rendered both above and below the list (ugcProduct.js
+    paints every [data-reviews-pagination]). The top set collapses to zero height
+    via :empty when there's a single page, so it adds no gap below the toolbar. --}}
+    <div class="cs-reviews-pagination cs-reviews-pagination--top" data-reviews-pagination></div>
     <div id="product-reviews"></div>
-    <div class="cs-reviews-pagination" data-reviews-pagination></div>
+    <div class="cs-reviews-pagination cs-reviews-pagination--bottom" data-reviews-pagination></div>
 
     <div class="cs-ugc-modal" data-review-modal hidden>
         <div class="cs-ugc-modal-overlay" data-review-modal-close></div>
