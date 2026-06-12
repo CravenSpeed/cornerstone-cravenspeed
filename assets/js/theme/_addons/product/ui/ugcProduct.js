@@ -128,6 +128,14 @@ import {
     buildArchetypeFitmentList,
     buildArchetypeFitmentTree,
 } from '../../global/vehicleFitment';
+import {
+    starIcons,
+    scoreBadge,
+    verifiedBadge,
+    editedBadge,
+    countryFlag,
+    formatReviewDate,
+} from '../../global/ugcCard';
 
 const MAX_STARS = 5;
 
@@ -342,11 +350,13 @@ export default class UgcProduct {
         this.ratingElement = document.querySelector('[data-product-rating]');
         this.listElement = document.querySelector('#product-reviews');
         this.toolbarElement = document.querySelector('[data-reviews-toolbar]');
-        this.paginationElement = document.querySelector('[data-reviews-pagination]');
+        // One container above the list and one below — both painted in lockstep.
+        this.paginationElements = Array.from(document.querySelectorAll('[data-reviews-pagination]'));
 
         this.questionsElement = document.querySelector('#product-questions');
         this.questionsToolbarElement = document.querySelector('[data-questions-toolbar]');
-        this.questionsPaginationElement = document.querySelector('[data-questions-pagination]');
+        // One container above the list and one below — both painted in lockstep.
+        this.questionsPaginationElements = Array.from(document.querySelectorAll('[data-questions-pagination]'));
 
         // "For your <vehicle>" fitment chip containers (SRS §3.4.1), one per
         // list. Space is reserved in SCSS (visibility, not display) so the
@@ -455,17 +465,17 @@ export default class UgcProduct {
             this.toolbarElement.addEventListener('change', this.onToolbarChange);
         }
 
-        if (this.paginationElement) {
-            this.paginationElement.addEventListener('click', this.onPaginationClick);
-        }
+        this.paginationElements.forEach((el) => {
+            el.addEventListener('click', this.onPaginationClick);
+        });
 
         if (this.questionsToolbarElement) {
             this.questionsToolbarElement.addEventListener('change', this.onQuestionsToolbarChange);
         }
 
-        if (this.questionsPaginationElement) {
-            this.questionsPaginationElement.addEventListener('click', this.onQuestionsPaginationClick);
-        }
+        this.questionsPaginationElements.forEach((el) => {
+            el.addEventListener('click', this.onQuestionsPaginationClick);
+        });
 
         // Fitment chip clicks are delegated on the chip containers so the chip
         // survives every re-render without rebinding (SRS §3.4.1).
@@ -1851,6 +1861,18 @@ export default class UgcProduct {
     }
 
     /**
+     * Smoothly align a list section's header to the top of the viewport after a
+     * page change. No-op when the anchor is absent or scrollIntoView is
+     * unavailable (jsdom).
+     * @param {Element} element - The section anchor (its toolbar).
+     */
+    _scrollSectionToTop(element) {
+        if (element && typeof element.scrollIntoView === 'function') {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    /**
      * Filter both lists to a clicked review/question vehicle (issue #45). The
      * badge carries the review's own `fitment_id` (SRS §3.2.1) — guaranteed
      * present whenever the badge renders, since `vehicle_label` is null whenever
@@ -2023,7 +2045,7 @@ export default class UgcProduct {
 
     onPaginationClick(event) {
         const button = event.target.closest('[data-reviews-page]');
-        if (!button || !this.paginationElement.contains(button)) {
+        if (!button) {
             return;
         }
 
@@ -2036,6 +2058,10 @@ export default class UgcProduct {
 
         this.query.page = page;
         this.fetchReviews();
+
+        // A page change from the bottom controls would otherwise strand the
+        // reader at the foot of the new page — bring the list header into view.
+        this._scrollSectionToTop(this.toolbarElement);
     }
 
     /**
@@ -2129,7 +2155,7 @@ export default class UgcProduct {
 
     onQuestionsPaginationClick(event) {
         const button = event.target.closest('[data-questions-page]');
-        if (!button || !this.questionsPaginationElement.contains(button)) {
+        if (!button) {
             return;
         }
 
@@ -2142,6 +2168,8 @@ export default class UgcProduct {
 
         this.questionQuery.page = page;
         this.fetchQuestions();
+
+        this._scrollSectionToTop(this.questionsToolbarElement);
     }
 
     renderQuestionsList(items) {
@@ -2158,7 +2186,7 @@ export default class UgcProduct {
     }
 
     renderQuestionsPagination() {
-        if (!this.questionsPaginationElement) {
+        if (!this.questionsPaginationElements.length) {
             return;
         }
 
@@ -2167,8 +2195,10 @@ export default class UgcProduct {
             : 0;
 
         if (pageCount <= 1) {
-            this.questionsPaginationElement.innerHTML = '';
-            this.questionsPaginationElement.style.visibility = 'hidden';
+            this.questionsPaginationElements.forEach((el) => {
+                el.innerHTML = '';
+                el.style.visibility = 'hidden';
+            });
             return;
         }
 
@@ -2183,8 +2213,13 @@ export default class UgcProduct {
 
         buttons.push(this._questionPageButton('next', current + 1, current >= pageCount, 'Next'));
 
-        this.questionsPaginationElement.innerHTML = `<nav class="cs-questions-pages" aria-label="Questions pagination">${buttons.join('')}</nav>`;
-        this.questionsPaginationElement.style.visibility = 'visible';
+        // Distinct accessible names per landmark (axe landmark-unique) — the two
+        // navs are otherwise identical.
+        this.questionsPaginationElements.forEach((el) => {
+            const position = el.classList.contains('cs-questions-pagination--top') ? 'top' : 'bottom';
+            el.innerHTML = `<nav class="cs-questions-pages" aria-label="Questions pagination, ${position} of list">${buttons.join('')}</nav>`;
+            el.style.visibility = 'visible';
+        });
     }
 
     _questionPageButton(key, page, disabled, label, isCurrent = false) {
@@ -2199,10 +2234,10 @@ export default class UgcProduct {
             this.questionsElement.innerHTML = `<p class="cs-questions-error">${MESSAGES.questionsError}</p>`;
         }
 
-        if (this.questionsPaginationElement) {
-            this.questionsPaginationElement.innerHTML = '';
-            this.questionsPaginationElement.style.visibility = 'hidden';
-        }
+        this.questionsPaginationElements.forEach((el) => {
+            el.innerHTML = '';
+            el.style.visibility = 'hidden';
+        });
     }
 
     /**
@@ -2265,15 +2300,17 @@ export default class UgcProduct {
     }
 
     renderPagination() {
-        if (!this.paginationElement) {
+        if (!this.paginationElements.length) {
             return;
         }
 
         const pageCount = this.perPage > 0 ? Math.ceil(this.total / this.perPage) : 0;
 
         if (pageCount <= 1) {
-            this.paginationElement.innerHTML = '';
-            this.paginationElement.style.visibility = 'hidden';
+            this.paginationElements.forEach((el) => {
+                el.innerHTML = '';
+                el.style.visibility = 'hidden';
+            });
             return;
         }
 
@@ -2288,8 +2325,13 @@ export default class UgcProduct {
 
         buttons.push(this._pageButton('next', current + 1, current >= pageCount, 'Next'));
 
-        this.paginationElement.innerHTML = `<nav class="cs-reviews-pages" aria-label="Reviews pagination">${buttons.join('')}</nav>`;
-        this.paginationElement.style.visibility = 'visible';
+        // Distinct accessible names per landmark (axe landmark-unique) — the two
+        // navs are otherwise identical.
+        this.paginationElements.forEach((el) => {
+            const position = el.classList.contains('cs-reviews-pagination--top') ? 'top' : 'bottom';
+            el.innerHTML = `<nav class="cs-reviews-pages" aria-label="Reviews pagination, ${position} of list">${buttons.join('')}</nav>`;
+            el.style.visibility = 'visible';
+        });
     }
 
     _pageButton(key, page, disabled, label, isCurrent = false) {
@@ -2894,10 +2936,10 @@ export default class UgcProduct {
             this.listElement.innerHTML = `<p class="cs-reviews-error">${MESSAGES.loadError}</p>`;
         }
 
-        if (this.paginationElement) {
-            this.paginationElement.innerHTML = '';
-            this.paginationElement.style.visibility = 'hidden';
-        }
+        this.paginationElements.forEach((el) => {
+            el.innerHTML = '';
+            el.style.visibility = 'hidden';
+        });
 
         // The reviews list is unavailable, so hide the overview panel with it
         // and re-arm the gallery load for the next successful render.
@@ -2909,15 +2951,7 @@ export default class UgcProduct {
     }
 
     _buildStars(average) {
-        const rounded = Math.round(average);
-        let stars = '';
-
-        for (let i = 1; i <= MAX_STARS; i += 1) {
-            const modifier = i <= rounded ? 'ratingFull' : 'ratingEmpty';
-            stars += `<span class="icon icon--${modifier}"><svg><use href="#icon-star" /></svg></span>`;
-        }
-
-        return `<span class="cs-rating-stars" role="img" aria-label="${average} out of ${MAX_STARS} stars">${stars}</span>`;
+        return `<span class="cs-rating-stars" role="img" aria-label="${average} out of ${MAX_STARS} stars">${starIcons(Math.round(average))}</span>`;
     }
 
     _countLabel(count) {
@@ -2963,17 +2997,7 @@ export default class UgcProduct {
      * @returns {string}
      */
     _countryFlag(code) {
-        if (typeof code !== 'string') {
-            return '';
-        }
-
-        const cc = code.trim().toLowerCase();
-        if (!/^[a-z]{2}$/.test(cc)) {
-            return '';
-        }
-
-        const label = cc.toUpperCase();
-        return `<img class="cs-review-flag" src="https://flagcdn.com/${cc}.svg" alt="${label}" title="${label}" loading="lazy">`;
+        return countryFlag(code);
     }
 
     _buildReview(review, includeMedia = true, clickableVehicle = true) {
@@ -2981,17 +3005,13 @@ export default class UgcProduct {
         const title = this._escape(review.title);
         const body = this._escape(review.body);
         const date = this._formatDate(review.date);
-        const verified = review.verified_purchaser
-            ? '<span class="cs-review-verified">Verified Purchaser</span>'
-            : '';
+        const verified = verifiedBadge(review.verified_purchaser);
         // Public disclosure that staff edited this review's content (SRS §3.2.1
         // `edited` / §3.1.1, cs-ugc #145). Strict `=== true` so a missing field
         // on an older payload is treated as false and nothing renders — the card
         // must never break on an absent flag, and it never reveals who edited or
         // how many times (only the derived boolean is exposed).
-        const edited = review.edited === true
-            ? '<span class="cs-review-edited">Edited by CravenSpeed</span>'
-            : '';
+        const edited = editedBadge(review.edited);
         const staff = review.staff_response
             ? `<div class="cs-review-staff"><strong>CravenSpeed:</strong> ${this._escape(review.staff_response)}</div>`
             : '';
@@ -3004,7 +3024,7 @@ export default class UgcProduct {
                 <div class="cs-review-heading">
                     ${date ? `<span class="cs-review-date">${date}</span>` : ''}
                     ${this._buildStars(review.rating || 0)}
-                    <span class="cs-review-score">${review.rating || 0}</span>
+                    ${scoreBadge(review.rating || 0)}
                     ${title ? `<h3 class="cs-review-title">${title}</h3>` : ''}
                 </div>
                 <p class="cs-review-meta">
@@ -3021,20 +3041,7 @@ export default class UgcProduct {
     }
 
     _formatDate(value) {
-        if (!value) {
-            return '';
-        }
-
-        const parsed = new Date(value);
-        if (Number.isNaN(parsed.getTime())) {
-            return '';
-        }
-
-        return parsed.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-        });
+        return formatReviewDate(value);
     }
 
     _escape(value) {
@@ -3070,17 +3077,17 @@ export default class UgcProduct {
             this.toolbarElement.removeEventListener('change', this.onToolbarChange);
         }
 
-        if (this.paginationElement) {
-            this.paginationElement.removeEventListener('click', this.onPaginationClick);
-        }
+        this.paginationElements.forEach((el) => {
+            el.removeEventListener('click', this.onPaginationClick);
+        });
 
         if (this.questionsToolbarElement) {
             this.questionsToolbarElement.removeEventListener('change', this.onQuestionsToolbarChange);
         }
 
-        if (this.questionsPaginationElement) {
-            this.questionsPaginationElement.removeEventListener('click', this.onQuestionsPaginationClick);
-        }
+        this.questionsPaginationElements.forEach((el) => {
+            el.removeEventListener('click', this.onQuestionsPaginationClick);
+        });
 
         if (this.reviewsFitmentChipElement) {
             this.reviewsFitmentChipElement.removeEventListener('click', this.onFitmentChipClick);

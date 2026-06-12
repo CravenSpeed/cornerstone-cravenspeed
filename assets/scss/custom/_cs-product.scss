@@ -1003,11 +1003,26 @@ $cs-fitment-active-hover: #05a;
   margin-top: spacing('single');
 }
 
+// Top page controls sit between the toolbar and the list. They paint in the
+// same pass as the list (no separate async shift), so they reserve no fixed
+// height and collapse fully when there's a single page — no gap below the
+// toolbar in the common case.
+.cs-reviews-pagination--top {
+  min-height: 0;
+  margin-top: 0;
+  margin-bottom: spacing('single');
+
+  &:empty {
+    margin-bottom: 0;
+  }
+}
+
 .cs-reviews-pages {
   display: flex;
   flex-wrap: wrap;
   gap: spacing('quarter');
   align-items: center;
+  justify-content: center;
 }
 
 .cs-reviews-page {
@@ -1267,11 +1282,25 @@ button.cs-ugc-vehicle-badge {
   margin-top: spacing('single');
 }
 
+// Top page controls sit between the toolbar and the list. They paint in the
+// same pass as the list, so they reserve no fixed height and collapse fully
+// when there's a single page — no gap below the toolbar in the common case.
+.cs-questions-pagination--top {
+  min-height: 0;
+  margin-top: 0;
+  margin-bottom: spacing('single');
+
+  &:empty {
+    margin-bottom: 0;
+  }
+}
+
 .cs-questions-pages {
   display: flex;
   flex-wrap: wrap;
   gap: spacing('quarter');
   align-items: center;
+  justify-content: center;
 }
 
 .cs-questions-page {
@@ -1965,21 +1994,41 @@ textarea.cs-ugc-input {
   }
 }
 
+// The dialog reads as an enlarged review card (matching the home wall lightbox):
+// full-bleed media on top, the owning review as the padded card body beneath.
 .cs-ugc-lightbox {
   align-items: center;
 
   // Above the gallery modal (.cs-ugc-modal base is 1000), so a tile clicked
   // inside it opens the viewer on top.
   z-index: 1010;
+
+  // Wider side gutters than the base modal so the prev/next arrows — which sit
+  // outside the dialog — stay fully on-screen (2.5rem arrow + its gap).
+  padding-left: 3rem;
+  padding-right: 3rem;
+
+  // Legible over the photo it always opens on: a translucent dark disc with a
+  // white glyph (matches the home review lightbox).
+  .cs-ugc-modal-close {
+    color: #fff;
+    background: rgba(0, 0, 0, 0.45);
+
+    &:hover,
+    &:focus-visible {
+      color: #fff;
+      background: rgba(0, 0, 0, 0.6);
+    }
+  }
 }
 
-// Full owning review rendered under the media for band / gallery-modal
-// tiles. Scrolls on its own so a long review never pushes the media off
-// screen.
+// Full owning review rendered under the media as the card body, with the home
+// card body's padding. Scrolls on its own so a long review never pushes the
+// media off screen.
 .cs-ugc-lightbox-review {
   width: 100%;
-  margin-top: spacing('half');
   max-height: 30vh;
+  padding: spacing('single');
   overflow-y: auto;
   text-align: left;
 
@@ -1989,33 +2038,46 @@ textarea.cs-ugc-input {
   }
 }
 
+// Card-like width; full-bleed contents (no padding) so the media reaches the
+// edges. The prev/next arrows live in the modal's side gutters, outside this box
+// — which is why the dialog keeps overflow visible and the media clips its own
+// corners instead.
 .cs-ugc-lightbox-dialog {
-  max-width: 48rem;
-  padding: spacing('double') spacing('half') spacing('half');
-
-  @include breakpoint('medium') {
-    padding: spacing('double') spacing('single') spacing('single');
-  }
+  max-width: 32rem;
+  padding: 0;
 }
 
-// Column stack: media on top, the owning review (when present) beneath.
+// Column stack: media on top, the owning review (when present) beneath, each
+// full width.
 .cs-ugc-lightbox-content {
   display: flex;
   flex-direction: column;
-  align-items: center;
   min-height: 4.5rem;
-
-  // Reserve side gutters so the floating prev/next arrows never overlap the
-  // content — including the review text below the media, and the empty space
-  // while media is still loading (2.5rem arrow + its edge offset).
-  padding: 0 2.75rem;
 }
 
+// Full-bleed media: spans the dialog edge to edge, rounding the corners it meets
+// (the top when a review body follows; all four when it is the only content).
 .cs-ugc-lightbox-img,
 .cs-ugc-lightbox-video {
   display: block;
-  max-width: 100%;
-  max-height: 60vh;
+  width: 100%;
+  height: auto;
+}
+
+// Scoped to the product lightbox — its content holds a single media item, so the
+// first/last-child corner rounding is unambiguous. The home lightbox reuses the
+// same .cs-ugc-lightbox-img/-video classes but stacks a review's full media set
+// inside its own rounded wrapper, so these must not reach it.
+.cs-ugc-lightbox .cs-ugc-lightbox-img:first-child,
+.cs-ugc-lightbox .cs-ugc-lightbox-video:first-child {
+  border-top-left-radius: 0.75rem;
+  border-top-right-radius: 0.75rem;
+}
+
+.cs-ugc-lightbox .cs-ugc-lightbox-img:last-child,
+.cs-ugc-lightbox .cs-ugc-lightbox-video:last-child {
+  border-bottom-left-radius: 0.75rem;
+  border-bottom-right-radius: 0.75rem;
 }
 
 // Prev/next arrows shared by the product review lightbox and the home overview
@@ -2058,10 +2120,16 @@ textarea.cs-ugc-input {
   }
 }
 
+// Sit just OUTSIDE the dialog's edges (right/left: 100% pushes each arrow fully
+// past the matching edge) so the dialog keeps a tight, card-like width and the
+// arrows read as separate controls beside it. The modal reserves matching side
+// gutters so they never clip off-screen.
 .cs-ugc-lightbox-arrow--prev {
-  left: spacing('half');
+  right: 100%;
+  margin-right: spacing('quarter');
 }
 
 .cs-ugc-lightbox-arrow--next {
-  right: spacing('half');
+  left: 100%;
+  margin-left: spacing('quarter');
 }

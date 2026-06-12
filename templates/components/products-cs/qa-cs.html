@@ -16,8 +16,12 @@
             {{lang 'products.questions.submit.open'}}
         </button>
     </div>
+    {{!-- Page controls render both above and below the list (ugcProduct.js paints
+    every [data-questions-pagination]). The top set collapses to zero height via
+    :empty on a single page, so it adds no gap below the toolbar. --}}
+    <div class="cs-questions-pagination cs-questions-pagination--top" data-questions-pagination></div>
     <div id="product-questions"></div>
-    <div class="cs-questions-pagination" data-questions-pagination></div>
+    <div class="cs-questions-pagination cs-questions-pagination--bottom" data-questions-pagination></div>
 
     <div class="cs-ugc-modal" data-question-modal hidden>
         <div class="cs-ugc-modal-overlay" data-question-modal-close></div>
