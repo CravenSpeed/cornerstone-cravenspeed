@@ -6,6 +6,7 @@ import {
     editedBadge,
     countryFlag,
     formatReviewDate,
+    vehicleBadge,
 } from '../../../theme/_addons/global/ugcCard';
 
 const countOf = (html, needle) => html.split(needle).length - 1;
@@ -71,6 +72,46 @@ describe('ugcCard shared primitives', () => {
             expect(formatReviewDate('')).toBe('');
             expect(formatReviewDate(null)).toBe('');
             expect(formatReviewDate('not-a-date')).toBe('');
+        });
+    });
+
+    describe('vehicleBadge', () => {
+        it('renders a static <p> with the modifier and escaped label by default', () => {
+            const html = vehicleBadge('MINI Cooper F56', { modifier: 'cs-ugc-overview-vehicle' });
+            expect(html).toContain('<p class="cs-ugc-vehicle-badge cs-ugc-overview-vehicle">');
+            expect(html).toContain('MINI Cooper F56');
+            expect(html).not.toContain('<button');
+            expect(html).not.toContain('data-fitment-filter');
+        });
+
+        it('renders a clickable <button> with filter data for a positive fitmentId', () => {
+            const html = vehicleBadge('MINI Cooper F56', {
+                modifier: 'cs-review-vehicle', fitmentId: 42, clickable: true,
+            });
+            expect(html).toContain('<button type="button"');
+            expect(html).toContain('data-fitment-filter="42"');
+            expect(html).toContain('data-fitment-label="MINI Cooper F56"');
+        });
+
+        it('falls back to a static <p> when clickable but the fitmentId is missing or not positive', () => {
+            expect(vehicleBadge('MINI Cooper F56', { clickable: true, fitmentId: null })).toContain('<p');
+            expect(vehicleBadge('MINI Cooper F56', { clickable: true, fitmentId: 0 })).toContain('<p');
+            expect(vehicleBadge('MINI Cooper F56', { clickable: true, fitmentId: -1 })).toContain('<p');
+            expect(vehicleBadge('MINI Cooper F56', { clickable: true, fitmentId: 'nope' })).toContain('<p');
+        });
+
+        it('returns empty for a null / undefined / empty label', () => {
+            expect(vehicleBadge(null)).toBe('');
+            expect(vehicleBadge(undefined)).toBe('');
+            expect(vehicleBadge('')).toBe('');
+        });
+
+        it('escapes the label internally (no XSS via vehicle_label)', () => {
+            const html = vehicleBadge('<img src=x onerror=alert(1)>', {
+                fitmentId: 7, clickable: true,
+            });
+            expect(html).not.toContain('<img');
+            expect(html).toContain('&lt;img');
         });
     });
 });

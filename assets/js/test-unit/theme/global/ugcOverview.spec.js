@@ -1,6 +1,4 @@
 import UgcOverview, {
-    buildStarIcons,
-    buildVehicleBadge,
     paginate,
     pageCount,
 } from '../../../theme/_addons/global/ugcOverview';
@@ -62,43 +60,6 @@ describe('ugcOverview pure helpers', () => {
 
         it('is at least 1 even when empty', () => {
             expect(pageCount(0)).toBe(1);
-        });
-    });
-
-    describe('buildVehicleBadge', () => {
-        it('renders the system-generated vehicle_label inside the badge', () => {
-            const html = buildVehicleBadge('MINI Cooper F56');
-            expect(html).toContain('cs-ugc-vehicle-badge');
-            expect(html).toContain('MINI Cooper F56');
-        });
-
-        it('escapes the label (no XSS via vehicle_label)', () => {
-            const html = buildVehicleBadge('<img src=x onerror=alert(1)>');
-            expect(html).not.toContain('<img');
-            expect(html).toContain('&lt;img');
-        });
-
-        it('omits the badge entirely when there is no vehicle (null / empty / missing)', () => {
-            expect(buildVehicleBadge(null)).toBe('');
-            expect(buildVehicleBadge(undefined)).toBe('');
-            expect(buildVehicleBadge('')).toBe('');
-        });
-    });
-
-    describe('buildStarIcons', () => {
-        const countOf = (html, needle) => html.split(needle).length - 1;
-
-        it('renders five sprite stars split by rating', () => {
-            const html = buildStarIcons(3);
-            expect(countOf(html, '#icon-star')).toBe(5);
-            expect(countOf(html, 'icon--ratingFull')).toBe(3);
-            expect(countOf(html, 'icon--ratingEmpty')).toBe(2);
-        });
-
-        it('renders all empty stars for a zero rating', () => {
-            const html = buildStarIcons(0);
-            expect(countOf(html, 'icon--ratingFull')).toBe(0);
-            expect(countOf(html, 'icon--ratingEmpty')).toBe(5);
         });
     });
 });
