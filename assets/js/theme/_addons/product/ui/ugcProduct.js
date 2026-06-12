@@ -136,6 +136,7 @@ import {
     countryFlag,
     formatReviewDate,
 } from '../../global/ugcCard';
+import { pageWindow, PAGE_GAP, PAGE_GAP_HTML } from '../../global/ugcPagination';
 
 const MAX_STARS = 5;
 
@@ -2215,9 +2216,13 @@ export default class UgcProduct {
 
         buttons.push(this._questionPageButton('prev', current - 1, current <= 1, 'Previous'));
 
-        for (let page = 1; page <= pageCount; page += 1) {
-            buttons.push(this._questionPageButton(page, page, false, String(page), page === current));
-        }
+        pageWindow(current, pageCount).forEach((item) => {
+            if (item === PAGE_GAP) {
+                buttons.push(PAGE_GAP_HTML);
+                return;
+            }
+            buttons.push(this._questionPageButton(item, item, false, String(item), item === current));
+        });
 
         buttons.push(this._questionPageButton('next', current + 1, current >= pageCount, 'Next'));
 
@@ -2327,9 +2332,13 @@ export default class UgcProduct {
 
         buttons.push(this._pageButton('prev', current - 1, current <= 1, 'Previous'));
 
-        for (let page = 1; page <= pageCount; page += 1) {
-            buttons.push(this._pageButton(page, page, false, String(page), page === current));
-        }
+        pageWindow(current, pageCount).forEach((item) => {
+            if (item === PAGE_GAP) {
+                buttons.push(PAGE_GAP_HTML);
+                return;
+            }
+            buttons.push(this._pageButton(item, item, false, String(item), item === current));
+        });
 
         buttons.push(this._pageButton('next', current + 1, current >= pageCount, 'Next'));
 

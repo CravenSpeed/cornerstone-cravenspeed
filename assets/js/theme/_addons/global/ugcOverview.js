@@ -26,6 +26,7 @@
 import ugcApi from './ugcApi';
 import { escapeHtml } from './search/utils';
 import { resolveGarageFitment } from './vehicleFitment';
+import { pageWindow, PAGE_GAP, PAGE_GAP_HTML } from './ugcPagination';
 import {
     starIcons,
     scoreBadge,
@@ -657,9 +658,13 @@ export default class UgcOverview {
         const buttons = [];
         buttons.push(this.pageButton('prev', this.page - 1, this.page <= 1, 'Previous'));
 
-        for (let page = 1; page <= pages; page += 1) {
-            buttons.push(this.pageButton(page, page, false, String(page), page === this.page));
-        }
+        pageWindow(this.page, pages).forEach((item) => {
+            if (item === PAGE_GAP) {
+                buttons.push(PAGE_GAP_HTML);
+                return;
+            }
+            buttons.push(this.pageButton(item, item, false, String(item), item === this.page));
+        });
 
         buttons.push(this.pageButton('next', this.page + 1, this.page >= pages, 'Next'));
 
