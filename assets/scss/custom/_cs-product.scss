@@ -1052,6 +1052,18 @@ $cs-fitment-active-hover: #05a;
   }
 }
 
+// Ellipsis stand-in for a collapsed run of pages in the windowed pagination
+// controls (ugcPagination.js). Shared across reviews, Q&A, and the home wall —
+// sized to the 44px page buttons so the row stays aligned. Not interactive.
+.cs-ugc-page-gap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: spacing('single');
+  height: 44px;
+  color: stencilColor('color-textSecondary');
+}
+
 #product-rating {
   .cs-rating-stars {
     display: inline-flex;

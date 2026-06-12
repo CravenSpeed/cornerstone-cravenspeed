@@ -480,6 +480,20 @@ describe('UgcProduct (slice 6b — sort, filter, pagination)', () => {
             expect(bottom.querySelector('[data-reviews-page="4"]')).toBeNull();
         });
 
+        it('windows the controls for a large page count instead of listing every page', async () => {
+            // 2000 / 10 => 200 pages: anchors only, the current window, and gaps.
+            const api = buildApi(okEnvelope({ total: 2000, page: 1, per_page: 10, items: [{ id: 1, rating: 5, date: '2026-01-01' }] }));
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            const bottom = document.querySelector('.cs-reviews-pagination--bottom');
+            // First and last anchors present, a mid page collapsed into a gap.
+            expect(bottom.querySelector('[data-reviews-page="1"]')).not.toBeNull();
+            expect(bottom.querySelector('[data-reviews-page="200"]')).not.toBeNull();
+            expect(bottom.querySelector('[data-reviews-page="100"]')).toBeNull();
+            expect(bottom.querySelector('.cs-ugc-page-gap')).not.toBeNull();
+        });
+
         it('paints the same controls into both the top and bottom containers', async () => {
             const api = buildApi(okEnvelope({ total: 25, page: 1, per_page: 10, items: [{ id: 1, rating: 5, date: '2026-01-01' }] }));
             new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
