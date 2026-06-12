@@ -39,6 +39,18 @@ export function generationFitmentId(node) {
 }
 
 /**
+ * Compose the canonical `vehicle_label` from its make/model/generation parts —
+ * the SRS §3.2.4 rule: node names joined by single spaces, with empty parts
+ * dropped. The single source of the full-label join shared by `fitmentIdToLabel`
+ * and `buildArchetypeFitmentList`.
+ * @param {Array<string|null|undefined>} parts
+ * @returns {string}
+ */
+export function composeVehicleLabel(parts) {
+    return parts.filter(Boolean).join(' ');
+}
+
+/**
  * Resolve the visitor's garage selection to its fitment identity from the search
  * JSON's `vehicle_registry`. The registry's `models` map is keyed by bare model
  * slug and each model's `generations` map by bare generation slug — the same
@@ -147,9 +159,7 @@ export function fitmentIdToLabel(registry, fitmentId) {
                     const makeName = makeNameForModel(registry, modelSlug);
                     const modelName = model.name || modelSlug;
                     const genName = generationLabel(node);
-                    return [makeName, modelName, genName]
-                        .filter(part => part)
-                        .join(' ');
+                    return composeVehicleLabel([makeName, modelName, genName]);
                 }
             }
         }
@@ -211,7 +221,7 @@ export function buildArchetypeFitmentList(archetypeData) {
                             makeLabel,
                             modelLabel,
                             generationLabel: genLabel,
-                            label: `${makeLabel} ${modelLabel} ${genLabel}`,
+                            label: composeVehicleLabel([makeLabel, modelLabel, genLabel]),
                             fitment_id: generationFitmentId(genNode),
                         });
                     }

@@ -34,6 +34,7 @@ import {
     editedBadge,
     countryFlag,
     formatReviewDate,
+    vehicleBadge,
     MAX_STARS,
 } from './ugcCard';
 
@@ -76,38 +77,6 @@ function reviewRating(review) {
  */
 function hasMedia(review) {
     return Array.isArray(review.media) && review.media.length > 0;
-}
-
-/**
- * Build the 5-star strip from the shared icon sprite — the same
- * icon--ratingFull / icon--ratingEmpty + #icon-star markup the product page
- * renders (ugcProduct.js), so stars look identical on both surfaces. The
- * sprite is injected unconditionally in layout/base.html, so #icon-star is
- * available on the home page.
- * @param {number} rating - Whole stars, 0-5.
- * @returns {string}
- */
-export function buildStarIcons(rating) {
-    return starIcons(rating);
-}
-
-/**
- * Build the structured-vehicle badge from a review's system-generated
- * `vehicle_label` (cs-ugc SRS §3.4.2 / §3.2.1 — the display label the storefront
- * resolved at submit, e.g. "MINI Cooper F56"). Display-only on the home wall in
- * v1; garage-aware filtering of the wall is deferred to v1.1. A review with no
- * vehicle (universal product, or the submitter opted out) carries a `null` /
- * absent label — the badge is then omitted entirely (not an empty element), so
- * there is nothing to reserve space for.
- * @param {string|null|undefined} label
- * @returns {string}
- */
-export function buildVehicleBadge(label) {
-    if (!label) {
-        return '';
-    }
-
-    return `<p class="cs-ugc-vehicle-badge cs-ugc-overview-vehicle">${escapeHtml(label)}</p>`;
 }
 
 /**
@@ -609,7 +578,7 @@ export default class UgcOverview {
                 ${scoreBadge(rating)}
             </div>
             ${title ? `<h3 class="cs-ugc-overview-title">${title}</h3>` : ''}
-            ${buildVehicleBadge(review.vehicle_label)}
+            ${vehicleBadge(review.vehicle_label, { modifier: 'cs-ugc-overview-vehicle' })}
             <p class="cs-ugc-overview-text">${body}</p>
             <p class="cs-ugc-overview-meta">
                 <span class="cs-ugc-overview-author">${author}</span>

@@ -9,8 +9,12 @@
  *
  * None of these escape free-text: star/score/verified/edited render fixed markup
  * or numbers, the country code is validated to `[a-z]{2}` before interpolation,
- * and the date is machine-formatted. Callers escape any free-text upstream.
+ * and the date is machine-formatted. Callers escape any free-text upstream. The
+ * exception is `vehicleBadge`, which takes a free-text `label` and escapes it
+ * internally (both its text and attribute contexts).
  */
+
+import { escapeHtml } from './search/utils';
 
 export const MAX_STARS = 5;
 
@@ -110,4 +114,38 @@ export function formatReviewDate(value) {
         month: '2-digit',
         day: '2-digit',
     });
+}
+
+/**
+ * The structured-vehicle badge from a review's/question's system-generated
+ * `vehicle_label` (SRS §3.2.4 — e.g. "MINI Cooper F56 2014 to 2024"). A null /
+ * empty label renders nothing (no empty element to reserve space for), so a
+ * universal product or an opted-out submitter simply has no badge.
+ *
+ * Unlike the sibling primitives, the label is free text, so it is escaped here:
+ * `escapeHtml` covers `& < > " '`, making the single escaped value safe for both
+ * the text content and the `data-fitment-label` attribute.
+ *
+ * When `clickable` is set and `fitmentId` resolves to a positive integer, the
+ * badge is a `<button data-fitment-filter>` that drives the click-to-filter
+ * interaction (issue #45); otherwise it is a static `<p>`.
+ * @param {string|null|undefined} label - The system-generated `vehicle_label`.
+ * @param {Object} [options]
+ * @param {string} [options.modifier] - Surface-specific class (e.g. cs-review-vehicle).
+ * @param {number|string|null} [options.fitmentId] - The item's `fitment_id`.
+ * @param {boolean} [options.clickable] - Whether the badge filters on click.
+ * @returns {string}
+ */
+export function vehicleBadge(label, { modifier = '', fitmentId = null, clickable = false } = {}) {
+    if (!label) {
+        return '';
+    }
+
+    const safe = escapeHtml(label);
+    const id = parseInt(fitmentId, 10);
+    if (clickable && Number.isInteger(id) && id > 0) {
+        return `<button type="button" class="cs-ugc-vehicle-badge ${modifier}" data-fitment-filter="${id}" data-fitment-label="${safe}">${safe}</button>`;
+    }
+
+    return `<p class="cs-ugc-vehicle-badge ${modifier}">${safe}</p>`;
 }

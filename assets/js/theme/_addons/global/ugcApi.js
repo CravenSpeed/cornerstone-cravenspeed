@@ -102,6 +102,18 @@ export class UgcApi {
     }
 
     /**
+     * The §3.6 fallback result for a network/transport failure (the fetch itself
+     * rejected — no HTTP status to branch on). Shared by `get` and `post`.
+     * @param {Error} error
+     * @returns {Object}
+     */
+    _networkError(error) {
+        return {
+            ok: false, status: 0, message: MESSAGES.generic, error: error.message,
+        };
+    }
+
+    /**
      * Issue a GET, de-duping identical concurrent requests. Resolves to the
      * normalized result shape; network/parse failures resolve as ok:false too.
      * @param {string} path - Path under the API base, e.g. '/reviews/12'.
@@ -118,9 +130,7 @@ export class UgcApi {
                 const response = await this.fetch(url, { cache: 'no-cache' });
                 return await this.handleResponse(response);
             } catch (error) {
-                return {
-                    ok: false, status: 0, message: MESSAGES.generic, error: error.message,
-                };
+                return this._networkError(error);
             } finally {
                 this.pendingRequests.delete(url);
             }
@@ -147,9 +157,7 @@ export class UgcApi {
             });
             return await this.handleResponse(response);
         } catch (error) {
-            return {
-                ok: false, status: 0, message: MESSAGES.generic, error: error.message,
-            };
+            return this._networkError(error);
         }
     }
 

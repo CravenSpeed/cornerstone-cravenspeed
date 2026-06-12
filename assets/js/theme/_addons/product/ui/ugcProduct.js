@@ -135,6 +135,7 @@ import {
     editedBadge,
     countryFlag,
     formatReviewDate,
+    vehicleBadge,
 } from '../../global/ugcCard';
 import { pageWindow, PAGE_GAP, PAGE_GAP_HTML } from '../../global/ugcPagination';
 
@@ -2258,7 +2259,7 @@ export default class UgcProduct {
     _buildQuestion(question) {
         const author = this._escape(question.author) || MESSAGES.anonymous;
         const body = this._escape(question.body);
-        const date = this._formatDate(question.date);
+        const date = formatReviewDate(question.date);
         const answerAuthor = this._escape(question.staff_answer_author) || 'CravenSpeed';
         const answer = question.staff_answer
             ? `<div class="cs-question-answer"><strong>${answerAuthor}:</strong> ${this._escape(question.staff_answer)}</div>`
@@ -2270,7 +2271,7 @@ export default class UgcProduct {
                     <span class="cs-question-author">${author}</span>
                     ${date ? `<span class="cs-question-date">${date}</span>` : ''}
                 </p>
-                ${this._vehicleBadge(question.vehicle_label, question.fitment_id, 'cs-question-vehicle')}
+                ${vehicleBadge(question.vehicle_label, { modifier: 'cs-question-vehicle', fitmentId: question.fitment_id, clickable: true })}
                 <p class="cs-question-body">${body}</p>
                 ${answer}
             </article>`;
@@ -2970,53 +2971,11 @@ export default class UgcProduct {
         return count === 1 ? '1 review' : `${count} reviews`;
     }
 
-    /**
-     * Build a structured-vehicle badge (issue #45). When `clickable` and the
-     * item carries a positive `fitment_id`, it renders a `<button>` that filters
-     * the list to that vehicle on click; otherwise a static `<p>` (the SRS
-     * guarantees `vehicle_label` is null whenever `fitment_id` is, so that branch
-     * is also the defensive fallback). Empty string when there is no vehicle
-     * label. The lightbox review passes `clickable=false` — there is no list to
-     * filter from inside the media modal.
-     * @param {string} rawLabel - The item's `vehicle_label` (unescaped).
-     * @param {number|string} fitmentId - The item's `fitment_id`.
-     * @param {string} modifier - The card-specific class (cs-review-vehicle / cs-question-vehicle).
-     * @param {boolean} [clickable] - Whether the badge filters on click.
-     * @returns {string}
-     */
-    _vehicleBadge(rawLabel, fitmentId, modifier, clickable = true) {
-        const label = this._escape(rawLabel);
-        if (!label) {
-            return '';
-        }
-
-        const id = parseInt(fitmentId, 10);
-        if (clickable && Number.isInteger(id) && id > 0) {
-            return `<button type="button" class="cs-ugc-vehicle-badge ${modifier}" data-fitment-filter="${id}" data-fitment-label="${this._escapeAttr(rawLabel)}">${label}</button>`;
-        }
-
-        return `<p class="cs-ugc-vehicle-badge ${modifier}">${label}</p>`;
-    }
-
-    /**
-     * Render a small country flag from the review's ISO-3166 alpha-2 `country`
-     * (SRS §3.2.1, derived server-side from the submission IP; null on imported
-     * or un-geolocated rows). Served as SVG from flagcdn.com and lazy-loaded.
-     * Returns '' when there is no valid two-letter code, so older reviews simply
-     * show no flag. The code is validated to `[a-z]{2}`, so it is safe to
-     * interpolate into the URL/alt without further escaping.
-     * @param {string} code - The review's `country`.
-     * @returns {string}
-     */
-    _countryFlag(code) {
-        return countryFlag(code);
-    }
-
     _buildReview(review, includeMedia = true, clickableVehicle = true) {
         const author = this._escape(review.author) || MESSAGES.anonymous;
         const title = this._escape(review.title);
         const body = this._escape(review.body);
-        const date = this._formatDate(review.date);
+        const date = formatReviewDate(review.date);
         const verified = verifiedBadge(review.verified_purchaser);
         // Public disclosure that staff edited this review's content (SRS §3.2.1
         // `edited` / §3.1.1, cs-ugc #145). Strict `=== true` so a missing field
@@ -3041,19 +3000,15 @@ export default class UgcProduct {
                 </div>
                 <p class="cs-review-meta">
                     <span class="cs-review-author">${author}</span>
-                    ${this._countryFlag(review.country)}
+                    ${countryFlag(review.country)}
                     ${verified}
                     ${edited}
                 </p>
-                ${this._vehicleBadge(review.vehicle_label, review.fitment_id, 'cs-review-vehicle', clickableVehicle)}
+                ${vehicleBadge(review.vehicle_label, { modifier: 'cs-review-vehicle', fitmentId: review.fitment_id, clickable: clickableVehicle })}
                 <p class="cs-review-body">${body}</p>
                 ${media}
                 ${staff}
             </article>`;
-    }
-
-    _formatDate(value) {
-        return formatReviewDate(value);
     }
 
     _escape(value) {
