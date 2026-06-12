@@ -79,6 +79,25 @@ export function resolveGarageFitment(registry, garage) {
 }
 
 /**
+ * Resolve the garage fitment straight off a GlobalStateManager snapshot. Extracts
+ * the persisted garage selection (`vehicle.selected`) and the search-JSON
+ * `vehicle_registry` (`search.data.vehicle_registry`) defensively, then delegates
+ * to `resolveGarageFitment`. The single source of the global-state → fitment read
+ * shared by the product garage filter and the home overview (SRS §3.4.1).
+ * @param {Object|null} globalState - A GlobalStateManager state snapshot.
+ * @returns {{fitment_id: (number|null), label: string}|null}
+ *   `null` when there is no garage selection or no matching registry path.
+ */
+export function resolveGarageFitmentFromState(globalState) {
+    const vehicle = globalState && globalState.vehicle ? globalState.vehicle.selected : null;
+    const registry = globalState && globalState.search && globalState.search.data
+        ? globalState.search.data.vehicle_registry
+        : null;
+
+    return resolveGarageFitment(registry, vehicle);
+}
+
+/**
  * Find the make (brand) display name for a model slug by reverse-lookup over the
  * registry's `brands` map: each brand's `models` array lists the model slugs it
  * owns. Returns the brand's `name`, or `null` when no brand claims the model.

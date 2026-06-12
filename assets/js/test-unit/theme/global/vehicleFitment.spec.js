@@ -2,6 +2,7 @@ import {
     generationLabel,
     generationFitmentId,
     resolveGarageFitment,
+    resolveGarageFitmentFromState,
     fitmentIdToLabel,
     buildArchetypeFitmentList,
     buildArchetypeFitmentTree,
@@ -85,6 +86,31 @@ describe('vehicleFitment', () => {
             const noName = { models: { cooper: { generations: { cooperf56: { fitment_id: 87 } } } } };
             const result = resolveGarageFitment(noName, { make: 'mini', model: 'cooper', generation: 'cooperf56' });
             expect(result).toEqual({ fitment_id: 87, label: 'mini cooper' });
+        });
+    });
+
+    describe('resolveGarageFitmentFromState', () => {
+        it('returns null for null/undefined global state', () => {
+            expect(resolveGarageFitmentFromState(null)).toBeNull();
+            expect(resolveGarageFitmentFromState(undefined)).toBeNull();
+        });
+
+        it('returns null when search.data.vehicle_registry is absent', () => {
+            const globalState = {
+                vehicle: { selected: { make: 'mini', model: 'cooper', generation: 'cooperf56' } },
+                search: { data: {} },
+            };
+            expect(resolveGarageFitmentFromState(globalState)).toBeNull();
+        });
+
+        it('resolves a complete selection to the same shape resolveGarageFitment returns', () => {
+            const garage = { make: 'mini', model: 'cooper', generation: 'cooperf56' };
+            const globalState = {
+                vehicle: { selected: garage },
+                search: { data: { vehicle_registry: registry } },
+            };
+            expect(resolveGarageFitmentFromState(globalState))
+                .toEqual(resolveGarageFitment(registry, garage));
         });
     });
 

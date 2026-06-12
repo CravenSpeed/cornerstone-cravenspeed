@@ -25,7 +25,7 @@
 
 import ugcApi from './ugcApi';
 import { escapeHtml } from './search/utils';
-import { resolveGarageFitment } from './vehicleFitment';
+import { resolveGarageFitmentFromState } from './vehicleFitment';
 import { pageWindow, PAGE_GAP, PAGE_GAP_HTML } from './ugcPagination';
 import {
     starIcons,
@@ -237,12 +237,7 @@ export default class UgcOverview {
      * @param {Object} [globalState]
      */
     resolveFitmentFromGlobal(globalState) {
-        const vehicle = globalState && globalState.vehicle ? globalState.vehicle.selected : null;
-        const registry = globalState && globalState.search && globalState.search.data
-            ? globalState.search.data.vehicle_registry
-            : null;
-
-        const resolved = resolveGarageFitment(registry, vehicle);
+        const resolved = resolveGarageFitmentFromState(globalState);
         this.fitmentId = resolved ? resolved.fitment_id : null;
         this.fitmentLabel = resolved ? resolved.label : null;
     }
