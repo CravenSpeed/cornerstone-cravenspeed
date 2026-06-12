@@ -26,7 +26,7 @@
 import ugcApi from './ugcApi';
 import { escapeHtml } from './search/utils';
 import { resolveGarageFitmentFromState } from './vehicleFitment';
-import { pageWindow, PAGE_GAP, PAGE_GAP_HTML } from './ugcPagination';
+import { renderPaginationNav } from './ugcPagination';
 import {
     starIcons,
     scoreBadge,
@@ -616,42 +616,16 @@ export default class UgcOverview {
     }
 
     buildPagination(total, position) {
-        const pages = pageCount(total);
-        if (pages <= 1) return '';
-
-        const buttons = [];
-        buttons.push(this.pageButton('prev', this.page - 1, this.page <= 1, 'Previous'));
-
-        pageWindow(this.page, pages).forEach((item) => {
-            if (item === PAGE_GAP) {
-                buttons.push(PAGE_GAP_HTML);
-                return;
-            }
-            buttons.push(this.pageButton(item, item, false, String(item), item === this.page));
-        });
-
-        buttons.push(this.pageButton('next', this.page + 1, this.page >= pages, 'Next'));
-
         // Distinct accessible names per landmark (axe landmark-unique) — the two
         // navs are otherwise identical.
-        return `<nav class="cs-ugc-overview-pagination cs-ugc-overview-pagination--${position}" aria-label="Reviews pagination, ${position} of wall">${buttons.join('')}</nav>`;
-    }
-
-    /**
-     * A single numbered/prev/next page button, matching the product module's
-     * `.cs-reviews-page` treatment (44px target, is-current/aria-current).
-     * @param {string|number} key - Stable key for the slot (prev/next/page no.).
-     * @param {number} page - The page the button targets.
-     * @param {boolean} disabled
-     * @param {string} label
-     * @param {boolean} [isCurrent]
-     * @returns {string}
-     */
-    pageButton(key, page, disabled, label, isCurrent = false) {
-        const current = isCurrent ? ' is-current' : '';
-        const aria = isCurrent ? ' aria-current="page"' : '';
-        const disabledAttr = disabled ? ' disabled' : '';
-        return `<button type="button" class="cs-ugc-overview-page${current}" data-ugc-page="${page}" data-page-key="${key}"${aria}${disabledAttr}>${label}</button>`;
+        return renderPaginationNav({
+            current: this.page,
+            pageCount: pageCount(total),
+            pageClass: 'cs-ugc-overview-page',
+            dataAttr: 'data-ugc-page',
+            navClass: `cs-ugc-overview-pagination cs-ugc-overview-pagination--${position}`,
+            ariaLabel: `Reviews pagination, ${position} of wall`,
+        });
     }
 
     /**

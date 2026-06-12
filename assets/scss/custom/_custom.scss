@@ -76,6 +76,94 @@ h6 {
 }
 
 // -----------------------------------------------------------------------------
+// Shared UGC pagination + toolbar primitives. The reviews, Q&A, and home-wall
+// controls render byte-identical markup (ugcPagination.js) and carried
+// byte-identical SCSS — folded here so the three named classes can't drift.
+// Defined in _custom.scss because it imports before both cs-home and cs-product
+// (theme.scss), so the placeholders are in scope for every consumer.
+// -----------------------------------------------------------------------------
+
+// Numbered/prev/next page button: 44px target, bordered, current-page emphasis,
+// dimmed disabled state. Owns its border-radius and background so all three
+// consumers are explicit (reviews/Q&A previously inherited the radius from
+// .cs-product-archetype button above — same spacing('half') value).
+%cs-ugc-pagination-button {
+  min-width: 44px;
+  height: 44px;
+  padding: 0 spacing('half');
+  border: 1px solid stencilColor('color-greyLightest');
+  border-radius: spacing('half');
+  background: #fff;
+  color: stencilColor('color-textBase');
+  cursor: pointer;
+
+  &:hover:not(:disabled),
+  &:focus-visible {
+    border-color: stencilColor('color-primary');
+    color: stencilColor('color-primary');
+  }
+
+  &.is-current {
+    border-color: stencilColor('color-primary');
+    color: stencilColor('color-primary');
+    font-weight: 700;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+// The flex row wrapping the page buttons (wrap + centered, quarter-spacing gap).
+%cs-ugc-pagination-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing('quarter');
+  align-items: center;
+  justify-content: center;
+}
+
+// Reviews/Q&A toolbar: stacked on mobile, a wrapping bottom-aligned row on
+// desktop.
+%cs-ugc-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('half');
+  margin-bottom: spacing('single');
+
+  @include breakpoint('medium') {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: spacing('single');
+  }
+}
+
+// A single labelled control within the toolbar.
+%cs-ugc-control {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('quarter');
+  font-size: 0.875rem;
+}
+
+// The checkbox-toggle variant: 44px min-height centers the checkbox against the
+// selects' control row (the toolbar bottom-aligns items, so a text-height
+// toggle would sink to the selects' baseline).
+%cs-ugc-control-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: spacing('half');
+  min-height: 44px;
+}
+
+%cs-ugc-control-label {
+  color: stencilColor('color-textSecondary');
+  font-weight: 600;
+}
+
+// -----------------------------------------------------------------------------
 //
 //                                  Utility Classes
 //

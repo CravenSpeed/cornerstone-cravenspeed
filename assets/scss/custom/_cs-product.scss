@@ -799,39 +799,19 @@ $cs-fitment-active-hover: #05a;
 // Sort/filter toolbar (SRS §3.4.1 / §3.2.1). Mobile-first: controls stack and
 // wrap; a horizontal row on desktop.
 .cs-reviews-toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: spacing('half');
-  margin-bottom: spacing('single');
-
-  @include breakpoint('medium') {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: spacing('single');
-  }
+  @extend %cs-ugc-toolbar;
 }
 
 .cs-reviews-control {
-  display: flex;
-  flex-direction: column;
-  gap: spacing('quarter');
-  font-size: 0.875rem;
+  @extend %cs-ugc-control;
 
-  // 44px min-height centers the checkbox against the selects' control row
-  // (the toolbar bottom-aligns items, so a text-height toggle would sink to
-  // the selects' baseline).
   &--toggle {
-    flex-direction: row;
-    align-items: center;
-    gap: spacing('half');
-    min-height: 44px;
+    @extend %cs-ugc-control-toggle;
   }
 }
 
 .cs-reviews-control-label {
-  color: stencilColor('color-textSecondary');
-  font-weight: 600;
+  @extend %cs-ugc-control-label;
 }
 
 // "For your <vehicle>" fitment filter chip (SRS §3.4.1). The slot reserves the
@@ -1018,38 +998,11 @@ $cs-fitment-active-hover: #05a;
 }
 
 .cs-reviews-pages {
-  display: flex;
-  flex-wrap: wrap;
-  gap: spacing('quarter');
-  align-items: center;
-  justify-content: center;
+  @extend %cs-ugc-pagination-nav;
 }
 
 .cs-reviews-page {
-  min-width: 44px;
-  height: 44px;
-  padding: 0 spacing('half');
-  border: 1px solid stencilColor('color-greyLightest');
-  background: #fff;
-  color: stencilColor('color-textBase');
-  cursor: pointer;
-
-  &:hover:not(:disabled),
-  &:focus-visible {
-    border-color: stencilColor('color-primary');
-    color: stencilColor('color-primary');
-  }
-
-  &.is-current {
-    border-color: stencilColor('color-primary');
-    color: stencilColor('color-primary');
-    font-weight: 700;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
+  @extend %cs-ugc-pagination-button;
 }
 
 // Ellipsis stand-in for a collapsed run of pages in the windowed pagination
@@ -1266,38 +1219,19 @@ button.cs-ugc-vehicle-badge {
 }
 
 .cs-questions-toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: spacing('half');
-  margin-bottom: spacing('single');
-
-  @include breakpoint('medium') {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: spacing('single');
-  }
+  @extend %cs-ugc-toolbar;
 }
 
 .cs-questions-control {
-  display: flex;
-  flex-direction: column;
-  gap: spacing('quarter');
-  font-size: 0.875rem;
+  @extend %cs-ugc-control;
 
-  // Mirrors .cs-reviews-control--toggle: 44px min-height centers the
-  // checkbox against the select's control row.
   &--toggle {
-    flex-direction: row;
-    align-items: center;
-    gap: spacing('half');
-    min-height: 44px;
+    @extend %cs-ugc-control-toggle;
   }
 }
 
 .cs-questions-control-label {
-  color: stencilColor('color-textSecondary');
-  font-weight: 600;
+  @extend %cs-ugc-control-label;
 }
 
 // Visuals come from the shared .cs-form-select class (the add-to-cart option
@@ -1322,38 +1256,11 @@ button.cs-ugc-vehicle-badge {
 }
 
 .cs-questions-pages {
-  display: flex;
-  flex-wrap: wrap;
-  gap: spacing('quarter');
-  align-items: center;
-  justify-content: center;
+  @extend %cs-ugc-pagination-nav;
 }
 
 .cs-questions-page {
-  min-width: 44px;
-  height: 44px;
-  padding: 0 spacing('half');
-  border: 1px solid stencilColor('color-greyLightest');
-  background: #fff;
-  color: stencilColor('color-textBase');
-  cursor: pointer;
-
-  &:hover:not(:disabled),
-  &:focus-visible {
-    border-color: stencilColor('color-primary');
-    color: stencilColor('color-primary');
-  }
-
-  &.is-current {
-    border-color: stencilColor('color-primary');
-    color: stencilColor('color-primary');
-    font-weight: 700;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
+  @extend %cs-ugc-pagination-button;
 }
 
 .cs-question {

@@ -338,11 +338,8 @@
 }
 
 .cs-ugc-overview-pagination {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: spacing('quarter');
+  @extend %cs-ugc-pagination-nav;
+
   margin-top: spacing('single');
 }
 
@@ -352,34 +349,8 @@
   margin-bottom: spacing('single');
 }
 
-// Matches the .cs-reviews-page treatment on the product page: 44px touch
-// targets, bordered buttons, current-page emphasis, dimmed disabled state.
 .cs-ugc-overview-page {
-  min-width: 44px;
-  height: 44px;
-  padding: 0 spacing('half');
-  border: 1px solid stencilColor('color-greyLightest');
-  border-radius: spacing('half'); // matches .cs-product-archetype button (_custom.scss:59)
-  background: stencilColor('color-white');
-  color: stencilColor('color-textBase');
-  cursor: pointer;
-
-  &:hover:not(:disabled),
-  &:focus-visible {
-    border-color: stencilColor('color-primary');
-    color: stencilColor('color-primary');
-  }
-
-  &.is-current {
-    border-color: stencilColor('color-primary');
-    color: stencilColor('color-primary');
-    font-weight: 700;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
+  @extend %cs-ugc-pagination-button;
 }
 
 // =============================================================================

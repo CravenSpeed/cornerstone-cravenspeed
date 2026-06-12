@@ -137,7 +137,7 @@ import {
     formatReviewDate,
     vehicleBadge,
 } from '../../global/ugcCard';
-import { pageWindow, PAGE_GAP, PAGE_GAP_HTML } from '../../global/ugcPagination';
+import { renderPaginationNav } from '../../global/ugcPagination';
 
 const MAX_STARS = 5;
 
@@ -2200,42 +2200,26 @@ export default class UgcProduct {
             : 0;
 
         if (pageCount <= 1) {
-            this.questionsPaginationElements.forEach((el) => {
-                el.innerHTML = '';
-                el.style.visibility = 'hidden';
-            });
+            this._hidePagination(this.questionsPaginationElements);
             return;
         }
 
         const current = this.questionQuery.page;
-        const buttons = [];
-
-        buttons.push(this._questionPageButton('prev', current - 1, current <= 1, 'Previous'));
-
-        pageWindow(current, pageCount).forEach((item) => {
-            if (item === PAGE_GAP) {
-                buttons.push(PAGE_GAP_HTML);
-                return;
-            }
-            buttons.push(this._questionPageButton(item, item, false, String(item), item === current));
-        });
-
-        buttons.push(this._questionPageButton('next', current + 1, current >= pageCount, 'Next'));
 
         // Distinct accessible names per landmark (axe landmark-unique) — the two
         // navs are otherwise identical.
         this.questionsPaginationElements.forEach((el) => {
             const position = el.classList.contains('cs-questions-pagination--top') ? 'top' : 'bottom';
-            el.innerHTML = `<nav class="cs-questions-pages" aria-label="Questions pagination, ${position} of list">${buttons.join('')}</nav>`;
+            el.innerHTML = renderPaginationNav({
+                current,
+                pageCount,
+                pageClass: 'cs-questions-page',
+                dataAttr: 'data-questions-page',
+                navClass: 'cs-questions-pages',
+                ariaLabel: `Questions pagination, ${position} of list`,
+            });
             el.style.visibility = 'visible';
         });
-    }
-
-    _questionPageButton(key, page, disabled, label, isCurrent = false) {
-        const current = isCurrent ? ' is-current' : '';
-        const aria = isCurrent ? ' aria-current="page"' : '';
-        const disabledAttr = disabled ? ' disabled' : '';
-        return `<button type="button" class="cs-questions-page${current}" data-questions-page="${page}" data-page-key="${key}"${aria}${disabledAttr}>${label}</button>`;
     }
 
     renderQuestionsError() {
@@ -2243,10 +2227,7 @@ export default class UgcProduct {
             this.questionsElement.innerHTML = `<p class="cs-questions-error">${MESSAGES.questionsError}</p>`;
         }
 
-        this.questionsPaginationElements.forEach((el) => {
-            el.innerHTML = '';
-            el.style.visibility = 'hidden';
-        });
+        this._hidePagination(this.questionsPaginationElements);
     }
 
     /**
@@ -2316,42 +2297,33 @@ export default class UgcProduct {
         const pageCount = this.perPage > 0 ? Math.ceil(this.total / this.perPage) : 0;
 
         if (pageCount <= 1) {
-            this.paginationElements.forEach((el) => {
-                el.innerHTML = '';
-                el.style.visibility = 'hidden';
-            });
+            this._hidePagination(this.paginationElements);
             return;
         }
 
         const current = this.query.page;
-        const buttons = [];
-
-        buttons.push(this._pageButton('prev', current - 1, current <= 1, 'Previous'));
-
-        pageWindow(current, pageCount).forEach((item) => {
-            if (item === PAGE_GAP) {
-                buttons.push(PAGE_GAP_HTML);
-                return;
-            }
-            buttons.push(this._pageButton(item, item, false, String(item), item === current));
-        });
-
-        buttons.push(this._pageButton('next', current + 1, current >= pageCount, 'Next'));
 
         // Distinct accessible names per landmark (axe landmark-unique) — the two
         // navs are otherwise identical.
         this.paginationElements.forEach((el) => {
             const position = el.classList.contains('cs-reviews-pagination--top') ? 'top' : 'bottom';
-            el.innerHTML = `<nav class="cs-reviews-pages" aria-label="Reviews pagination, ${position} of list">${buttons.join('')}</nav>`;
+            el.innerHTML = renderPaginationNav({
+                current,
+                pageCount,
+                pageClass: 'cs-reviews-page',
+                dataAttr: 'data-reviews-page',
+                navClass: 'cs-reviews-pages',
+                ariaLabel: `Reviews pagination, ${position} of list`,
+            });
             el.style.visibility = 'visible';
         });
     }
 
-    _pageButton(key, page, disabled, label, isCurrent = false) {
-        const current = isCurrent ? ' is-current' : '';
-        const aria = isCurrent ? ' aria-current="page"' : '';
-        const disabledAttr = disabled ? ' disabled' : '';
-        return `<button type="button" class="cs-reviews-page${current}" data-reviews-page="${page}" data-page-key="${key}"${aria}${disabledAttr}>${label}</button>`;
+    _hidePagination(elements) {
+        elements.forEach((el) => {
+            el.innerHTML = '';
+            el.style.visibility = 'hidden';
+        });
     }
 
     /**
@@ -2949,10 +2921,7 @@ export default class UgcProduct {
             this.listElement.innerHTML = `<p class="cs-reviews-error">${MESSAGES.loadError}</p>`;
         }
 
-        this.paginationElements.forEach((el) => {
-            el.innerHTML = '';
-            el.style.visibility = 'hidden';
-        });
+        this._hidePagination(this.paginationElements);
 
         // The reviews list is unavailable, so hide the overview panel with it
         // and re-arm the gallery load for the next successful render.
