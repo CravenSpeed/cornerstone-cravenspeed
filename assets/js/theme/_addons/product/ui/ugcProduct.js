@@ -1292,6 +1292,11 @@ export default class UgcProduct {
         }
 
         this.openModal(this.reviewModalElement, this.reviewFormElement);
+        // Mirror onReviewOpenClick: the modal opened here programmatically (not via
+        // the open-button click) must still mount the Turnstile widget. Verified
+        // purchasers are not exempt — the API requires cf_turnstile_token on every
+        // submission, validating it before the token (SRS §3.2.6, §3.4.5, cs-ugc#257).
+        this.renderTurnstile('review');
     }
 
     /**

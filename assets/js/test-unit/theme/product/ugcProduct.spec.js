@@ -2479,6 +2479,9 @@ describe('UgcProduct (slice 6f — verified-purchaser token capture)', () => {
         document.body.innerHTML = '';
         window.history.replaceState({}, '', '/');
         jest.restoreAllMocks();
+        // Other suites rely on window.turnstile being absent (the form-field
+        // fallback path); the Turnstile-render tests below stub it, so clear it.
+        delete window.turnstile;
     });
 
     describe('URL strip (SRS §3.4.1)', () => {
@@ -2640,6 +2643,61 @@ describe('UgcProduct (slice 6f — verified-purchaser token capture)', () => {
 
             expect(tabClick).toHaveBeenCalled();
             expect(reviewModal().hidden).toBe(false);
+        });
+    });
+
+    // cs-ugc#257: the verified auto-open path (?ugc_token) opens the modal
+    // programmatically and must mount Turnstile just like the open-button click.
+    // The API validates cf_turnstile_token on every submission, verified or not
+    // (SRS §3.2.6, §3.4.5), so a missing widget blocks verified submissions.
+    describe('Turnstile render on the verified path (cs-ugc#257)', () => {
+        const reviewModal = () => document.querySelector('[data-review-modal]');
+        const turnstileEl = () => document.querySelector('[data-review-turnstile]');
+
+        const stubTurnstile = () => {
+            const render = jest.fn(() => 'wid-1');
+            // Present + truthy so _loadTurnstileScript resolves without injecting
+            // the real Cloudflare script (jsdom would never load it).
+            window.turnstile = { render, getResponse: jest.fn(), reset: jest.fn() };
+            return render;
+        };
+
+        it('mounts the Turnstile widget when auto-opening from a valid token', async () => {
+            setUrl('?ugc_token=abc123');
+            const render = stubTurnstile();
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildTokenApi());
+            await flush();
+
+            expect(reviewModal().hidden).toBe(false);
+            expect(render).toHaveBeenCalledTimes(1);
+            expect(render.mock.calls[0][0]).toBe(turnstileEl());
+        });
+
+        it('mounts the Turnstile widget on the verified path even with an invalid/expired token', async () => {
+            setUrl('?ugc_token=expired');
+            const render = stubTurnstile();
+            const api = buildTokenApi({ validateResult: { ok: false, status: 400, error: 'Invalid' } });
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+            await flush();
+
+            expect(reviewModal().hidden).toBe(false);
+            expect(render).toHaveBeenCalledTimes(1);
+        });
+
+        it('still mounts the Turnstile widget on the normal open-button path (regression)', async () => {
+            setUrl('');
+            const render = stubTurnstile();
+            // eslint-disable-next-line no-new
+            new UgcProduct(ARCHETYPE_ID, buildStateManager(), buildTokenApi());
+            await flush();
+
+            document.querySelector('[data-review-modal-open]').click();
+            await flush();
+
+            expect(render).toHaveBeenCalledTimes(1);
+            expect(render.mock.calls[0][0]).toBe(turnstileEl());
         });
     });
 });
