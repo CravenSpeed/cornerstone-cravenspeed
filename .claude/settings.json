@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+
+      "Bash(gh issue *)",
+      "Bash(gh pr *)",
+      "Bash(gh label *)",
+      "Bash(gh api *)",
+      "Bash(gh repo *)",
+      "Bash(gh auth *)",
+
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(jest *)",
+      "Bash(grunt *)",
+      "Bash(stencil *)",
+
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(sed *)",
+      "Bash(awk *)",
+      "Bash(echo *)",
+      "Bash(ls *)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(rm -f /tmp/*)",
+      "Bash(rm -f /private/tmp/*)"
+    ],
+    "deny": [
+      "Bash(gh pr merge*)",
+      "Bash(gh pr merge *)"
+    ]
+  }
+}

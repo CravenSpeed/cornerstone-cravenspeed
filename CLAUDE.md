@@ -9,6 +9,61 @@
 
 ---
 
+## Cross-repo program — the cs-ugc UGC system
+
+This theme is **one of three codebases** in the CravenSpeed UGC program, all agreeing to one shared contract:
+
+| Codebase | Owns |
+| :--- | :--- |
+| **cs-ugc** (`CravenSpeed/cs-ugc`, Flask API) | The **contract** — `UGC-SRS.md` + `UGC-MILESTONES.md` — and the UGC API at `ugc.cravenspeed.com`. |
+| **cornerstone-cravenspeed** (this repo) | The **storefront code** — the JS/SCSS modules that consume the UGC API (SRS §3.4 storefront contract, §3.5). |
+| **QTY** (`pdxtdi/qty.info`) | The moderation UI, crons, Postmark, and the fitment/registry publish pipeline. |
+
+### Sources of truth live in cs-ugc — reference them, never copy them
+
+- **`UGC-SRS.md`** (request/response shapes, status codes, query params, token format §4.2, the `vehicle_registry` object-node shape §3.1.4) and **`UGC-MILESTONES.md`** (milestone DoDs M1–M11) are **frozen in cs-ugc**. Locally they're the sibling checkout at **`../cs-ugc/UGC-SRS.md`**; canonically they're `CravenSpeed/cs-ugc` on GitHub.
+- **There is exactly one copy, in cs-ugc.** Never create a copy of the SRS in this repo. If you find one here, surface it as a bug to delete.
+- **SRS-first, then code.** Storefront code must match the SRS. If a real-world need pivots the design, the SRS in cs-ugc changes **first** (with a change-log entry), then this repo's code follows — never the reverse.
+
+### What's tracked where
+
+- **Milestone-level tracking** lives in cs-ugc as `storefront-tracking` issues (the contract handoff briefs, e.g. #158). cs-ugc owns milestone visibility for cross-milestone dependencies.
+- **Fine-grained execution issues** live **here** in `CravenSpeed/cornerstone-cravenspeed` — this repo decomposes a handoff brief into its own implementable tickets, branches, and PRs. Code review for storefront diffs happens **here**, never in cs-ugc (there'd be nothing to diff against there).
+- Cross-repo issue links use the `cs-ugc#NN` form (e.g. `cs-ugc#209`).
+
+### The cutover model
+
+Milestone work collects on the long-lived **`cs-ugc-frontend`** integration branch and merges to **`master`** in a single cutover PR + theme push. That cutover is M11 step **B.3** in `../cs-ugc/docs/M11-cutover-runbook.md` — going live retires the registry shim and makes M6 + M9 live on the storefront.
+
+---
+
+## Agent team & workflow
+
+Role-based, mirroring cs-ugc:
+
+| Role | Who | When |
+| :--- | :--- | :--- |
+| **PM** | You (user) + top-level Claude | Owns sequencing, decisions, cross-issue coordination. |
+| **Implementer** | [`implementer`](.claude/agents/implementer.md) subagent | Well-specified work, one issue at a time, to preserve PM context. |
+| **Reviewer** | [`reviewer`](.claude/agents/reviewer.md) subagent | After a PR is opened, before merge. Read-only, independent context. |
+
+### Git workflow (all roles)
+
+- **Start from latest `master`:** `git checkout master && git pull origin master` before branching. (Default branch here is `master`, not `main`.)
+- **One branch per issue:** `<issue-number>-<short-slug>` (e.g. `158-slice-a-fitment-chip`).
+- **Never cherry-pick across branches.** Need another PR's work? It merges to `master` first, then you pull.
+- **Return to `master`** after opening the PR.
+- **PM verifies mergeability** (`gh pr view <N> --json mergeable`) before dispatching the reviewer.
+- **Only the user merges PRs.** The PM prepares them (rebase, conflicts, review) but never runs `gh pr merge`.
+
+### Conventions
+
+- **Milestone prefix on issues/PRs:** `Mx #NN:` (or `Mx:` with no sub-number), e.g. `M9 #181:`. Work born from a milestone but outside its DoD → `Mx follow-up:`. Pure tooling/docs/style → no prefix.
+- **PR descriptions** list the issue's acceptance criteria, ticked, with `file:line` references where useful.
+- **Commit messages** — short descriptive subject, body explains the *why*. **Deliberate divergence from cs-ugc:** this repo does **not** add a `Co-Authored-By` line (see Development Instructions §11). The stack-specific rules below (4-space JS indent, lint rules, mobile-first SCSS, no jQuery) are this repo's own and take precedence over any cs-ugc coding-style note.
+
+---
+
 ## Project Map (File Index)
 
 ### Configuration & Roots
