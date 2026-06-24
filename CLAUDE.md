@@ -31,9 +31,11 @@ This theme is **one of three codebases** in the CravenSpeed UGC program, all agr
 - **Fine-grained execution issues** live **here** in `CravenSpeed/cornerstone-cravenspeed` — this repo decomposes a handoff brief into its own implementable tickets, branches, and PRs. Code review for storefront diffs happens **here**, never in cs-ugc (there'd be nothing to diff against there).
 - Cross-repo issue links use the `cs-ugc#NN` form (e.g. `cs-ugc#209`).
 
-### The cutover model
+### The cutover model — COMPLETE (post-M11, trunk-based on `master`)
 
-Milestone work collects on the long-lived **`cs-ugc-frontend`** integration branch and merges to **`master`** in a single cutover PR + theme push. That cutover is M11 step **B.3** in `../cs-ugc/docs/M11-cutover-runbook.md` — going live retires the registry shim and makes M6 + M9 live on the storefront.
+**The M11 cutover has shipped.** UGC is live on `master`: the `cs-ugc-frontend` integration branch was merged in the single cutover PR (#61), the registry shim is retired, and M6 + M9 are live on the storefront. That cutover was M11 step **B.3** in `../cs-ugc/docs/M11-cutover-runbook.md`.
+
+Pre-cutover, milestone work collected on the long-lived **`cs-ugc-frontend`** branch and reached `master` only via that one cutover PR. **That model is now retired.** `cs-ugc-frontend` is closed; `master` is the live trunk. Post-cutover work — including M6/M9 follow-ups and production hotfixes like cs-ugc#257 — branches off `master` and merges back to `master` directly (one branch per issue, reviewer before merge, as below).
 
 ---
 
