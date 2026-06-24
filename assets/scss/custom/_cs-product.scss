@@ -25,6 +25,10 @@ $cs-product-max-width: 1440px;
 $cs-badge-max-width: 128px;
 $cs-modal-media-width: 220px;
 $cs-button-height: 50px;
+// Active fitment-chip accent — literal (no matching stencil token); ~5.1:1 on #fff.
+$cs-fitment-active: #06c;
+// Darker shade for the active chip's hover state.
+$cs-fitment-active-hover: #05a;
 
 @mixin shimmer {
   background: #e0e0e0;
@@ -550,6 +554,12 @@ $cs-button-height: 50px;
       margin: 0 auto;
     }
 
+    .cs-reviews,
+    .cs-questions {
+      max-width: $cs-product-max-width;
+      margin: 0 auto;
+    }
+
 
 
     .cs-product-form {
@@ -765,4 +775,1294 @@ $cs-button-height: 50px;
       gap: spacing('half');
     }
   }
+}
+
+// =============================================================================
+// 13. UGC Reviews (SRS §3.4.1)
+// =============================================================================
+// Reviews render in the description tab (#tab-reviews) and the product-info
+// rating summary (#product-rating) — neither has a .cs-product-modal ancestor,
+// so these selectors live at top level rather than nested under the modal.
+
+// Populated async, so reserve vertical space to avoid layout shift rather than
+// collapsing or hiding the container.
+#product-reviews {
+  min-height: 6rem;
+
+  .cs-reviews-empty,
+  .cs-reviews-error {
+    color: stencilColor('color-textSecondary');
+    margin: 0;
+  }
+}
+
+// Sort/filter toolbar (SRS §3.4.1 / §3.2.1). Mobile-first: controls stack and
+// wrap; a horizontal row on desktop.
+.cs-reviews-toolbar {
+  @extend %cs-ugc-toolbar;
+}
+
+.cs-reviews-control {
+  @extend %cs-ugc-control;
+
+  &--toggle {
+    @extend %cs-ugc-control-toggle;
+  }
+}
+
+.cs-reviews-control-label {
+  @extend %cs-ugc-control-label;
+}
+
+// "For your <vehicle>" fitment filter chip (SRS §3.4.1). The slot reserves the
+// chip's row height even when empty so the async paint never shifts the
+// toolbar (CLS); ugcProduct.js flips visibility, never display. Shared by the
+// reviews and Q&A toolbars.
+.cs-fitment-chip-slot {
+  display: flex;
+  align-items: center;
+  gap: spacing('quarter');
+  min-height: 44px;
+  visibility: hidden;
+}
+
+.cs-fitment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: spacing('half');
+  min-height: 44px;
+  padding: 0 spacing('half');
+  border: 1px solid stencilColor('color-textSecondary');
+  border-radius: spacing('half'); // matches the selects + button (_custom.scss:57)
+  background: transparent;
+  color: stencilColor('color-textBase');
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    border-color: stencilColor('color-textBase');
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  &.is-active {
+    border-color: $cs-fitment-active;
+    background: $cs-fitment-active;
+    color: #fff;
+
+    .cs-fitment-chip-count {
+      background: #fff;
+      color: $cs-fitment-active;
+    }
+
+    &:hover {
+      border-color: $cs-fitment-active-hover;
+      background: $cs-fitment-active-hover;
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid stencilColor('color-primary');
+    outline-offset: 2px;
+  }
+}
+
+.cs-fitment-chip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.cs-fitment-chip-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: stencilColor('color-textSecondary');
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: stencilColor('color-textBase');
+  }
+
+  &:focus-visible {
+    outline: 2px solid stencilColor('color-primary');
+    outline-offset: 2px;
+  }
+}
+
+// "Select your vehicle to filter" prompt: shown in the chip slot on a
+// fitment-capable product when no garage vehicle is resolved. A dashed ghost
+// button (distinct from the solid active chip) that scrolls to the vehicle
+// picker on click; the trailing arrow signals the jump.
+.cs-fitment-prompt {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 spacing('half');
+  border: 1px dashed stencilColor('color-textSecondary');
+  border-radius: spacing('half'); // matches the selects + button (_custom.scss:57)
+  background: transparent;
+  color: stencilColor('color-textSecondary');
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+
+  &::after {
+    content: '→';
+    margin-left: spacing('quarter');
+  }
+
+  &:hover {
+    border-color: $cs-fitment-active;
+    color: $cs-fitment-active;
+  }
+
+  &:focus-visible {
+    outline: 2px solid stencilColor('color-primary');
+    outline-offset: 2px;
+  }
+}
+
+// Passive status when a resolved garage vehicle has no reviews/questions on this
+// product: explains why no "For your <vehicle>" filter chip is offered. Muted,
+// italic, non-interactive — distinct from the dashed prompt and the blue chip.
+.cs-fitment-empty {
+  color: stencilColor('color-textSecondary');
+  font-size: 0.875rem;
+  font-style: italic;
+}
+
+// Active click-filter label (issue #45): when a customer clicks a review/question
+// vehicle badge, this replaces the garage chip with "Showing: <vehicle>". Mirrors
+// the active chip's blue pill but is non-interactive — the adjacent
+// .cs-fitment-chip-clear button (a sibling in the slot) drops the filter.
+.cs-fitment-showing {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 spacing('half');
+  border-radius: spacing('half'); // matches the selects + button (_custom.scss:57)
+  background: $cs-fitment-active;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+// Visuals come from the shared .cs-form-select class (the add-to-cart option
+// dropdowns) on the same element — identical by construction.
+
+// Pagination (SRS §3.2.1 envelope counts). Reserve space rather than hiding so
+// the list does not jump when a single page collapses the control.
+.cs-reviews-pagination {
+  min-height: 3rem;
+  margin-top: spacing('single');
+}
+
+// Top page controls sit between the toolbar and the list. They paint in the
+// same pass as the list (no separate async shift), so they reserve no fixed
+// height and collapse fully when there's a single page — no gap below the
+// toolbar in the common case.
+.cs-reviews-pagination--top {
+  min-height: 0;
+  margin-top: 0;
+  margin-bottom: spacing('single');
+
+  &:empty {
+    margin-bottom: 0;
+  }
+}
+
+.cs-reviews-pages {
+  @extend %cs-ugc-pagination-nav;
+}
+
+.cs-reviews-page {
+  @extend %cs-ugc-pagination-button;
+}
+
+// Ellipsis stand-in for a collapsed run of pages in the windowed pagination
+// controls (ugcPagination.js). Shared across reviews, Q&A, and the home wall —
+// sized to the 44px page buttons so the row stays aligned. Not interactive.
+.cs-ugc-page-gap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: spacing('single');
+  height: 44px;
+  color: stencilColor('color-textSecondary');
+}
+
+#product-rating {
+  .cs-rating-stars {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .cs-rating-empty {
+    color: stencilColor('color-textSecondary');
+    font-size: 0.875rem;
+  }
+}
+
+.cs-review {
+  padding: spacing('single') 0;
+  border-bottom: 1px solid stencilColor('color-greyLighter');
+
+  .cs-rating-stars {
+    display: inline-flex;
+  }
+}
+
+// Per-item side gutter for the reviews / Q&A content blocks (mirrors .pdpRow's
+// approach — the gutter lives on the content piece itself, not a shared wrapper,
+// so any single item can still opt into full width). Padding rather than margin
+// because the medium rule centers these via margin: 0 auto. Mobile-first: half
+// on mobile, single from the medium breakpoint up.
+.cs-reviews,
+.cs-questions {
+  padding: 0 spacing('half');
+
+  @include breakpoint('medium') {
+    padding: 0 spacing('single');
+  }
+}
+
+// Contrast pass: full stars keep the theme fill (brand red in the active
+// CravenSpeed variation); empties lighten so full vs empty separate cleanly.
+// Meta text steps up to greyDark below.
+.cs-reviews {
+  .icon--ratingEmpty svg {
+    fill: stencilColor('color-greyLighter');
+  }
+}
+
+// Single heading row: stars, numeric score, title, verified badge. The
+// nested title selector outranks the global `.tab-content h3` underline.
+.cs-review-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: spacing('half');
+
+  .cs-review-title {
+    border-bottom: 0;
+    margin: 0;
+  }
+}
+
+// Small dark pill so the score reads as a stat, not part of the title.
+.cs-review-score {
+  font-weight: 700;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.25rem 0.375rem;
+  border-radius: 4px;
+  background: stencilColor('color-textBase');
+  color: stencilColor('color-white');
+}
+
+.cs-review-title {
+  font-size: 1.125rem;
+  margin: spacing('quarter') 0;
+}
+
+// Card-scoped so these paragraph margins outrank the product-container reset
+// (`.cs-product-container p { margin: 0 }`, ~L83) — the reviews/Q&A tabs render
+// inside that container, which would otherwise zero the card's vertical rhythm.
+.cs-review .cs-review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing('half');
+  align-items: center;
+  color: stencilColor('color-greyDark');
+  font-size: 0.875rem;
+  margin: 0 0 spacing('quarter');
+}
+
+.cs-review-author {
+  color: stencilColor('color-textBase');
+  font-weight: 600;
+}
+
+// Reviewer country flag (SRS §3.2.1 `country`). Sized to the meta line; a hairline
+// border keeps white-edged flags (Japan, Finland…) visible on the white card. The
+// flex meta row centers it; absent entirely when the review carries no country.
+.cs-review-flag {
+  height: 1em;
+  width: auto;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.cs-review-verified {
+  font-weight: 700;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.25rem 0.375rem;
+  border-radius: 4px;
+  background: rgba(30, 235, 136, 0.18); // color-success at low alpha
+  color: #067647; // dark shade of the same green; readable on the chip
+}
+
+// Disclosure marker, not a positive badge (cs-ugc #145, SRS §3.1.1): staff
+// edited this review's content. Deliberately muted/neutral so it reads as
+// transparency, distinct from the green "Verified Purchaser" chip above.
+.cs-review-edited {
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.25rem 0.375rem;
+  border-radius: 4px;
+  background: stencilColor('color-greyLightest');
+  color: stencilColor('color-greyDarker'); // #333 on #e5e5e5 clears WCAG AA
+  font-style: italic;
+}
+
+.cs-review-date {
+  font-size: 0.875rem;
+  color: stencilColor('color-greyDark');
+}
+
+// Structured-vehicle badge (cs-ugc SRS §3.4 / Pass 27). Shared across review
+// cards, question cards, and the home overview wall — the review's
+// system-generated `vehicle_label` (e.g. 'MINI Cooper F56'), display-only.
+// Absent entirely when the item has no vehicle, so no space is reserved.
+// The second selector re-asserts the box model past the `.cs-product-container
+// p { margin: 0; padding: 0 }` reset (~L83), which would otherwise strip the
+// padding off the review/question cards' <p> badges (the home wall is outside
+// that container, so the bare class is enough there).
+.cs-ugc-vehicle-badge,
+.cs-product-container .cs-ugc-vehicle-badge {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: $cs-fitment-active;
+  color: #fff;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+// Card badges are clickable buttons (issue #45) — filtering the list to that
+// review/question's vehicle. Reset the button chrome the shared rule above
+// doesn't cover, and deepen to the same hover blue as the active fitment chip.
+// Only buttons match, so the home overview-wall <p> badge stays static. (A
+// <button> also sidesteps the `.cs-product-container p` reset entirely.)
+button.cs-ugc-vehicle-badge {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: $cs-fitment-active-hover;
+  }
+
+  &:focus-visible {
+    outline: 2px solid stencilColor('color-primary');
+    outline-offset: 2px;
+  }
+}
+
+.cs-review .cs-review-vehicle {
+  margin: 0 0 spacing('half');
+}
+
+.cs-review-body {
+  margin: 0;
+}
+
+.cs-review-staff {
+  margin-top: spacing('half');
+  padding: spacing('half');
+  background: stencilColor('color-greyLightest');
+}
+
+// Q&A tab (SRS §3.4.1 / §3.2.2). Mirrors the reviews list pattern; reserve
+// vertical space (min-height) so the async list does not shift on load.
+#product-questions {
+  min-height: 6rem;
+
+  .cs-questions-empty,
+  .cs-questions-error {
+    color: stencilColor('color-textSecondary');
+    margin: 0;
+  }
+}
+
+.cs-questions-toolbar {
+  @extend %cs-ugc-toolbar;
+}
+
+.cs-questions-control {
+  @extend %cs-ugc-control;
+
+  &--toggle {
+    @extend %cs-ugc-control-toggle;
+  }
+}
+
+.cs-questions-control-label {
+  @extend %cs-ugc-control-label;
+}
+
+// Visuals come from the shared .cs-form-select class (the add-to-cart option
+// dropdowns) on the same element — identical by construction.
+
+.cs-questions-pagination {
+  min-height: 3rem;
+  margin-top: spacing('single');
+}
+
+// Top page controls sit between the toolbar and the list. They paint in the
+// same pass as the list, so they reserve no fixed height and collapse fully
+// when there's a single page — no gap below the toolbar in the common case.
+.cs-questions-pagination--top {
+  min-height: 0;
+  margin-top: 0;
+  margin-bottom: spacing('single');
+
+  &:empty {
+    margin-bottom: 0;
+  }
+}
+
+.cs-questions-pages {
+  @extend %cs-ugc-pagination-nav;
+}
+
+.cs-questions-page {
+  @extend %cs-ugc-pagination-button;
+}
+
+.cs-question {
+  padding: spacing('single') 0;
+  border-bottom: 1px solid stencilColor('color-greyLightest');
+}
+
+.cs-question .cs-question-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing('half');
+  align-items: center;
+  color: stencilColor('color-textSecondary');
+  font-size: 0.875rem;
+  margin: 0 0 spacing('quarter');
+}
+
+.cs-question-author {
+  font-weight: 700;
+}
+
+.cs-question-date {
+  font-size: 0.875rem;
+  color: stencilColor('color-textSecondary');
+}
+
+.cs-question .cs-question-vehicle {
+  margin: 0 0 spacing('half');
+}
+
+.cs-question-body {
+  margin: 0;
+}
+
+.cs-question-answer {
+  margin-top: spacing('half');
+  padding: spacing('half');
+  background: stencilColor('color-greyLightest');
+}
+
+// =============================================================================
+// 14. UGC Submission Modal (SRS §3.4.1 / §3.4.5)
+// =============================================================================
+// Review and question submission forms. The modal root is toggled via the
+// `hidden` attribute from ugcProduct.js; when shown it overlays the viewport.
+
+.cs-ugc-submit-open {
+  margin-top: spacing('half');
+
+  // Drop Foundation's default `.button` bottom margin so the button bottom-aligns
+  // flush with the toolbar's select inputs (the row is align-items: flex-end, so
+  // that ~1rem bottom margin was lifting the button above the selects' baseline).
+  @include breakpoint('medium') {
+    margin: 0 0 0 auto;
+  }
+}
+
+.cs-ugc-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: spacing('single');
+  overflow-y: auto;
+
+  // Fade in each time ugcProduct.js removes the `hidden` attribute — the
+  // display: none -> flex flip restarts the animation, so the show/hide
+  // contract stays attribute-driven with no JS changes.
+  animation: fadeIn 0.2s ease;
+
+  &[hidden] {
+    display: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+.cs-ugc-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.cs-ugc-modal-dialog {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 32rem;
+  margin: spacing('single') 0;
+  padding: 0 spacing('single') spacing('single');
+  background: stencilColor('color-white');
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
+  color: stencilColor('color-textBase');
+
+  @include breakpoint('medium') {
+    padding: 0 spacing('double') spacing('double');
+  }
+}
+
+// Modern modal header band: stacked title + supporting subtitle. A tinted fill
+// that bleeds to the dialog edges (negative margins cancel the dialog padding)
+// sets it off as a distinct zone. The right padding reserves room for the close
+// button, which anchors to the dialog corner (not this header). Replaces the
+// bare storefront h4 + floating close.
+.cs-ugc-modal-header {
+  margin: 0 (-(spacing('single'))) spacing('single');
+  padding: spacing('single') 3rem spacing('single') spacing('single');
+  background: stencilColor('color-greyLightest');
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 0.75rem 0.75rem 0 0;
+
+  @include breakpoint('medium') {
+    margin: 0 (-(spacing('double'))) spacing('single');
+    padding: spacing('single') 3rem spacing('single') spacing('double');
+  }
+}
+
+.cs-ugc-modal-heading {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('quarter');
+}
+
+// Selector deliberately carries two classes: it must outrank the `.tab-content
+// h4` / `.modal-content h4` red-underline rule (specificity 0,1,1) that the modal
+// renders inside — a flat `.cs-ugc-modal-title` (0,1,0) loses and the red border
+// bleeds through. `.cs-ugc-modal-header .cs-ugc-modal-title` (0,2,0) wins.
+.cs-ugc-modal-header .cs-ugc-modal-title {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: stencilColor('color-textHeading');
+  border-bottom: 0;
+}
+
+.cs-ugc-modal-subtitle {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: stencilColor('color-greyDark');
+}
+
+// Anchored to the dialog corner (the dialog is position: relative), floating
+// above the tinted header band. Matches the established circular icon-button
+// pattern (.cs-fitment-chip-clear): transparent until hover/focus, generous
+// touch target, primary focus ring.
+.cs-ugc-modal-close {
+  position: absolute;
+  top: spacing('half');
+  right: spacing('half');
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: stencilColor('color-textBase');
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover,
+  &:focus-visible {
+    color: stencilColor('color-primary');
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  &:focus-visible {
+    outline: 2px solid stencilColor('color-primary');
+    outline-offset: 2px;
+  }
+}
+
+.cs-ugc-fields {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('single');
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.cs-ugc-field {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('quarter');
+}
+
+.cs-ugc-field-label {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.cs-ugc-input {
+  width: 100%;
+  padding: spacing('half');
+  font-size: 1rem;
+  color: stencilColor('color-textBase');
+  background: stencilColor('color-white');
+  border: 1px solid stencilColor('color-greyLight');
+  border-radius: spacing('half'); // matches the toolbar selects + button
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:focus {
+    outline: 0;
+    border-color: stencilColor('color-primary');
+    box-shadow: 0 0 4px stencilColor('color-primary');
+  }
+}
+
+// Textareas (review body, question body) keep the form's fixed width — only
+// vertical resize, so dragging can't pull them wider than the rest of the fields.
+textarea.cs-ugc-input {
+  resize: vertical;
+}
+
+.cs-ugc-input--file {
+  padding: spacing('quarter') 0;
+  font-size: 0.875rem;
+  border: 0;
+}
+
+.cs-ugc-field-hint {
+  font-size: 0.75rem;
+  color: stencilColor('color-greyDark');
+}
+
+// Structured vehicle section (SRS §3.4.1, M9 Slice B). Populated async by
+// ugcProduct.js on modal open — the verified pre-checked option or the
+// archetype-constrained dropdown. Reserves vertical space so the late paint
+// never shifts the form (CLS-safe): it stays in flow when empty rather than
+// collapsing with display:none.
+.cs-ugc-vehicle {
+  min-height: 1.5rem;
+}
+
+.cs-ugc-vehicle-picker {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('quarter');
+}
+
+// Make → model → generation waterfall (SRS §3.4.1, issue #41). Mirrors the
+// add-to-cart car selector (.cs-car-selection): stacked on mobile, row on
+// desktop. The dropdowns inherit .cs-car-selection-dropdown styling.
+.cs-ugc-vehicle-waterfall {
+  gap: spacing('quarter');
+
+  @include breakpoint('medium') {
+    align-items: stretch;
+  }
+}
+
+// Processing state during the media confirm pipeline (SRS §3.4.4). Reserves
+// vertical space so toggling it on/off never shifts the form (CLS-safe): the
+// element keeps its min-height when hidden rather than collapsing to display:none.
+.cs-ugc-processing {
+  min-height: 1.5rem;
+  margin: 0;
+  font-size: 0.875rem;
+  font-style: italic;
+  color: stencilColor('color-greyDark');
+  visibility: visible;
+
+  &[hidden] {
+    display: block;
+    visibility: hidden;
+  }
+}
+
+// Honeypot (SRS §3.4.5): present in the DOM and to automated form-fillers, but
+// visually removed via CSS — NOT type=hidden — and pulled from the tab order.
+.cs-ugc-honeypot {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.cs-ugc-turnstile {
+  display: flex;
+  justify-content: center;
+  min-height: 65px;
+}
+
+.cs-ugc-form-error {
+  margin: 0 0 spacing('single');
+  padding: spacing('half');
+  color: stencilColor('color-white');
+  background: stencilColor('color-error');
+  border-radius: spacing('half');
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.cs-ugc-form-success {
+  margin: 0;
+  padding: spacing('single');
+  background: stencilColor('color-greyLightest');
+  border-radius: spacing('half');
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.cs-ugc-form-footer {
+  display: flex;
+  justify-content: flex-end;
+
+  // Full-width CTA on mobile reads more modern; sits right-aligned from medium up.
+  // Drop Foundation's default `.button` bottom margin — the dialog padding
+  // already provides the gap below the footer.
+  .button {
+    width: 100%;
+    margin-bottom: 0;
+
+    @include breakpoint('medium') {
+      width: auto;
+    }
+  }
+}
+
+// =============================================================================
+// UGC review media display (issue #30, SRS §3.4.1 / §3.2.1): the top-level
+// photo thumbnail grid, the per-review thumbnail strips, and the shared media
+// lightbox.
+// =============================================================================
+
+// The reviews-overview panel (the class name predates the summary joining the
+// gallery in it). Populated async, so a floor of space is reserved and the
+// container is revealed via visibility, never display:none (CLS rule). Stays
+// hidden — space intact — when the archetype has no reviews. The summary
+// stacks above the gallery on mobile and sits beside it from medium up.
+.cs-ugc-media-grid {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('single');
+  margin: spacing('single') 0;
+  padding: spacing('single');
+  border-radius: 0.5rem;
+  background: stencilColor('color-greyLightest');
+  min-height: 4.5rem;
+  visibility: hidden;
+
+  @include breakpoint('medium') {
+    flex-direction: row;
+    align-items: flex-start;
+    min-height: 6rem;
+  }
+
+  .cs-media-tile {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    border-color: stencilColor('color-white');
+
+    &:hover,
+    &:focus-visible {
+      border-color: stencilColor('color-primary');
+    }
+  }
+
+  .cs-media-tile--more {
+    background: stencilColor('color-white');
+  }
+}
+
+// The collage: square tiles flow in an auto-fill grid and the first tile
+// features at 2×2. ugcProduct.js measures the resolved column count here to
+// fill the two-row band exactly.
+.cs-ugc-media-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+  gap: spacing('half');
+  width: 100%;
+
+  @include breakpoint('medium') {
+    grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
+    flex: 1;
+    min-width: 0;
+  }
+
+  .cs-media-tile:first-of-type {
+    grid-column: span 2;
+    grid-row: span 2;
+  }
+}
+
+// Archetype-wide rating summary: average rating header, then the per-score
+// histogram (§3.2.1 archetype_rating_breakdown) when the envelope serves it.
+// Full-width above the gallery on mobile; a fixed left column beside it from
+// medium up, stretched to the gallery band's height so the histogram can
+// distribute through it.
+.cs-ugc-media-grid-summary {
+  display: flex;
+  flex-direction: column;
+  gap: spacing('half');
+
+  @include breakpoint('medium') {
+    flex: 0 0 20rem;
+    align-self: stretch;
+    justify-content: center;
+  }
+}
+
+// Outsized header row: the panel's focal stat. Sprite stars need explicit
+// dimensions here (the theme has no global .icon sizing).
+.cs-ugc-summary-rating {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: spacing('half');
+
+  @include breakpoint('medium') {
+    justify-content: center;
+  }
+
+  .icon {
+    width: 1.5rem;
+    height: 1.5rem;
+
+    @include breakpoint('medium') {
+      width: 1.75rem;
+      height: 1.75rem;
+    }
+
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+  }
+}
+
+.cs-ugc-summary-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  max-width: 20rem;
+
+  @include breakpoint('medium') {
+    gap: 0.75rem;
+  }
+}
+
+.cs-ugc-breakdown-row {
+  display: flex;
+  align-items: center;
+  gap: spacing('half');
+  font-size: 0.875rem;
+
+  @include breakpoint('medium') {
+    font-size: 1rem;
+  }
+}
+
+.cs-ugc-breakdown-label {
+  min-width: 2rem;
+}
+
+.cs-ugc-breakdown-bar {
+  flex: 1;
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: 0.25rem;
+  background: stencilColor('color-white');
+
+  @include breakpoint('medium') {
+    height: 1rem;
+    border-radius: 0.5rem;
+  }
+}
+
+.cs-ugc-breakdown-fill {
+  display: block;
+  height: 100%;
+  background: stencilColor('color-primary');
+}
+
+.cs-ugc-breakdown-count {
+  min-width: 1.5rem;
+  text-align: right;
+  color: stencilColor('color-greyDark');
+}
+
+.cs-ugc-summary-average {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+
+  @include breakpoint('medium') {
+    font-size: 2.5rem;
+  }
+}
+
+.cs-ugc-summary-count {
+  color: stencilColor('color-greyDark');
+}
+
+// Painted by ugcProduct.js alongside the tiles; spans the full grid row so
+// the tiles flow beneath it. The global .tab-content heading underline reads
+// as a stray rule inside the panel, so it is dropped here (the descendant
+// selector outranks `.tab-content h3`).
+.cs-ugc-media-gallery .cs-ugc-media-grid-title {
+  grid-column: 1 / -1;
+  border-bottom: 0;
+  font-size: 1.125rem;
+  margin: 0;
+}
+
+// Per-review strip after the review body. Renders only when the review has
+// media, inside an already-async list, so no space reservation is needed
+// here. Tiles keep a fixed thumbnail size in this context.
+.cs-review-media {
+  display: flex;
+  flex-wrap: wrap;
+  gap: spacing('quarter');
+  margin-top: spacing('half');
+
+  .cs-media-tile {
+    width: 4.5rem;
+    height: 4.5rem;
+
+    @include breakpoint('medium') {
+      width: 6rem;
+      height: 6rem;
+    }
+  }
+}
+
+.cs-media-tile {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid stencilColor('color-greyLightest');
+  border-radius: 0.375rem;
+  background: stencilColor('color-greyLightest');
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    border-color: stencilColor('color-primary');
+    outline: none;
+  }
+}
+
+.cs-media-tile-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.2s ease;
+}
+
+.cs-media-tile:hover .cs-media-tile-thumb,
+.cs-media-tile:focus-visible .cs-media-tile-thumb {
+  transform: scale(1.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-media-tile-thumb {
+    transition: none;
+  }
+
+  .cs-media-tile:hover .cs-media-tile-thumb,
+  .cs-media-tile:focus-visible .cs-media-tile-thumb {
+    transform: none;
+  }
+}
+
+// Play affordance overlaid on a video tile's poster thumbnail.
+.cs-media-tile-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2rem;
+  height: 2rem;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 55%;
+    transform: translate(-50%, -50%);
+    border-style: solid;
+    border-width: 0.4rem 0 0.4rem 0.65rem;
+    border-color: transparent transparent transparent #fff;
+  }
+}
+
+// The trailing "+N" overflow tile that expands the grid in place.
+.cs-media-tile--more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 700;
+  color: stencilColor('color-textBase');
+}
+
+// Shared media lightbox: reuses the cs-ugc-modal shell; centers the media and
+// widens the dialog so photos/video get room on desktop.
+// Browsable all-media gallery modal, opened from the panel's "+N" tile.
+// Tiles inside reuse .cs-media-tile; clicking one opens the lightbox, which
+// layers above this modal.
+.cs-ugc-gallery-dialog {
+  width: 100%;
+  max-width: 60rem;
+}
+
+.cs-ugc-gallery-title {
+  margin: 0 0 spacing('half');
+  font-size: 1.125rem;
+}
+
+.cs-ugc-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+  gap: spacing('half');
+  max-height: 60vh;
+  overflow-y: auto;
+
+  @include breakpoint('medium') {
+    grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  }
+
+  .cs-media-tile {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+  }
+}
+
+.cs-ugc-gallery-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: spacing('half');
+
+  > [hidden] {
+    display: none;
+  }
+}
+
+// The dialog reads as an enlarged review card (matching the home wall lightbox):
+// full-bleed media on top, the owning review as the padded card body beneath.
+.cs-ugc-lightbox {
+  align-items: center;
+
+  // Above the gallery modal (.cs-ugc-modal base is 1000), so a tile clicked
+  // inside it opens the viewer on top.
+  z-index: 1010;
+
+  // Wider side gutters than the base modal so the prev/next arrows — which sit
+  // outside the dialog — stay fully on-screen (2.5rem arrow + its gap).
+  padding-left: 3rem;
+  padding-right: 3rem;
+
+  // Legible over the photo it always opens on: a translucent dark disc with a
+  // white glyph (matches the home review lightbox).
+  .cs-ugc-modal-close {
+    color: #fff;
+    background: rgba(0, 0, 0, 0.45);
+
+    &:hover,
+    &:focus-visible {
+      color: #fff;
+      background: rgba(0, 0, 0, 0.6);
+    }
+  }
+}
+
+// Full owning review rendered under the media as the card body, with the home
+// card body's padding. Scrolls on its own so a long review never pushes the
+// media off screen.
+.cs-ugc-lightbox-review {
+  width: 100%;
+  max-height: 30vh;
+  padding: spacing('single');
+  overflow-y: auto;
+  text-align: left;
+
+  .cs-review {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+}
+
+// Card-like width; full-bleed contents (no padding) so the media reaches the
+// edges. The prev/next arrows live in the modal's side gutters, outside this box
+// — which is why the dialog keeps overflow visible and the media clips its own
+// corners instead.
+.cs-ugc-lightbox-dialog {
+  max-width: 32rem;
+  padding: 0;
+}
+
+// Column stack: media on top, the owning review (when present) beneath, each
+// full width.
+.cs-ugc-lightbox-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 4.5rem;
+}
+
+// Full-bleed media: spans the dialog edge to edge, rounding the corners it meets
+// (the top when a review body follows; all four when it is the only content).
+.cs-ugc-lightbox-img,
+.cs-ugc-lightbox-video {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+// Scoped to the product lightbox — its content holds a single media item, so the
+// first/last-child corner rounding is unambiguous. The home lightbox reuses the
+// same .cs-ugc-lightbox-img/-video classes but stacks a review's full media set
+// inside its own rounded wrapper, so these must not reach it.
+.cs-ugc-lightbox .cs-ugc-lightbox-img:first-child,
+.cs-ugc-lightbox .cs-ugc-lightbox-video:first-child {
+  border-top-left-radius: 0.75rem;
+  border-top-right-radius: 0.75rem;
+}
+
+.cs-ugc-lightbox .cs-ugc-lightbox-img:last-child,
+.cs-ugc-lightbox .cs-ugc-lightbox-video:last-child {
+  border-bottom-left-radius: 0.75rem;
+  border-bottom-right-radius: 0.75rem;
+}
+
+// Prev/next arrows shared by the product review lightbox and the home overview
+// lightbox. Side-floating circles anchored to the dialog (position: relative).
+// The `display: inline-flex` would otherwise beat the UA [hidden] rule, so the
+// hidden state is restored explicitly for the attribute-driven show/hide.
+.cs-ugc-lightbox-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: stencilColor('color-textBase');
+  background: stencilColor('color-white');
+  border: 1px solid stencilColor('color-greyLightest');
+  border-radius: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+
+  &[hidden] {
+    display: none;
+  }
+
+  &:hover:not(:disabled),
+  &:focus-visible {
+    color: stencilColor('color-primary');
+    border-color: stencilColor('color-primary');
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+// Sit just OUTSIDE the dialog's edges (right/left: 100% pushes each arrow fully
+// past the matching edge) so the dialog keeps a tight, card-like width and the
+// arrows read as separate controls beside it. The modal reserves matching side
+// gutters so they never clip off-screen.
+.cs-ugc-lightbox-arrow--prev {
+  right: 100%;
+  margin-right: spacing('quarter');
+}
+
+.cs-ugc-lightbox-arrow--next {
+  left: 100%;
+  margin-left: spacing('quarter');
 }

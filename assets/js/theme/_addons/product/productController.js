@@ -6,13 +6,14 @@ import StateManager from './stateManager';
 import FulfillmentStatus from './ui/fulfillmentStatus';
 import AliasSelection from './ui/aliasSelection';
 import ProductDetails from './ui/productDetails';
-import Rating from './ui/rating';
 import ImageGallery from './ui/imageGallery';
 import AddToCart from './ui/addToCart';
 import ProductMessages from './ui/productMessages';
 import Badges from './ui/badges';
 import BlemProducts from './ui/blemProducts';
 import SchemaManager from './ui/schemaManager';
+import UgcProduct from './ui/ugcProduct';
+import ugcApi from '../global/ugcApi';
 import { resolveUrlToSelection } from './utils/urlResolver';
 
 export default class ProductController {
@@ -68,12 +69,19 @@ export default class ProductController {
             this.fulfillmentStatus = new FulfillmentStatus(this.stateManager);
             this.aliasSelection = new AliasSelection(this.stateManager, this.productMessages);
             this.productDetails = new ProductDetails(this.stateManager);
-            this.rating = new Rating(this.stateManager);
             this.imageGallery = new ImageGallery(this.stateManager);
             this.addToCart = new AddToCart(this.stateManager, this.productMessages);
             this.badges = new Badges(this.stateManager);
             this.blemProducts = new BlemProducts(this.stateManager);
             this.schemaManager = new SchemaManager(this.stateManager);
+            this.ugcProduct = new UgcProduct(
+                archetypeData.qty_archetype_id,
+                this.stateManager,
+                ugcApi,
+                undefined,
+                GlobalStateManager,
+                archetypeData,
+            );
 
             this.unsubscribeLocal = this.stateManager.subscribe(this.handleLocalStateChange.bind(this));
 
@@ -167,5 +175,6 @@ export default class ProductController {
         if (this.unsubscribeGlobal) this.unsubscribeGlobal();
         if (this.unsubscribeLocal) this.unsubscribeLocal();
         if (this.schemaManager) this.schemaManager.destroy();
+        if (this.ugcProduct) this.ugcProduct.destroy();
     }
 }

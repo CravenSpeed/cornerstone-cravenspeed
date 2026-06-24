@@ -1,7 +1,4 @@
-// cs-ugc #175 shim: registry generation nodes are migrating from a bare string
-// label to { name, fitment_id } (UGC-SRS §3.1.4 / change-log Pass 27). Tolerate
-// either shape until the object-only cutover overwrites these reads; retires then.
-const generationLabel = (node) => (node && typeof node === 'object' ? node.name : node);
+import { generationLabel } from '../vehicleFitment';
 
 export default class SearchEngine {
     constructor(data) {
@@ -112,7 +109,7 @@ export default class SearchEngine {
         if (modelSlug && registry.models && registry.models[modelSlug]) {
             modelName = registry.models[modelSlug].name || modelSlug;
             if (genSlug && registry.models[modelSlug].generations && registry.models[modelSlug].generations[genSlug]) {
-                genName = generationLabel(registry.models[modelSlug].generations[genSlug]);
+                genName = generationLabel(registry.models[modelSlug].generations[genSlug]) || genSlug;
             }
         }
 

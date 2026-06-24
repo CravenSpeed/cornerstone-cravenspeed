@@ -1,10 +1,6 @@
 import StateManager from '../global/stateManager';
 import VehiclePersistence from '../global/vehiclePersistence';
-
-// cs-ugc #175 shim: registry generation nodes are migrating from a bare string
-// label to { name, fitment_id } (UGC-SRS §3.1.4 / change-log Pass 27). Tolerate
-// either shape until the object-only cutover overwrites these reads; retires then.
-const generationLabel = (node) => (node && typeof node === 'object' ? node.name : node);
+import { generationLabel } from '../global/vehicleFitment';
 
 export default class VehicleSelector {
     constructor(context) {
@@ -116,7 +112,8 @@ export default class VehicleSelector {
             const modelSlug = this.modelSelect.value;
             if (modelSlug && this.registry.models[modelSlug]) {
                 const generations = this.registry.models[modelSlug].generations || {};
-                const gens = Object.entries(generations).map(([id, node]) => ({ id, name: generationLabel(node) }))
+                const gens = Object.entries(generations)
+                    .map(([id, node]) => ({ id, name: generationLabel(node) || id }))
                     .sort((a, b) => b.name.localeCompare(a.name)); // Sort descending by name
                 gens.forEach(g => this.addOption(this.yearSelect, g.id, g.name));
 

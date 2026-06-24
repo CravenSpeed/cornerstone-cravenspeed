@@ -4,6 +4,7 @@ import ProductGrid from '../global/ui/productGrid';
 import DataManager from '../global/dataManager';
 import StateManager from '../global/stateManager';
 import SearchEngine from '../global/search/searchEngine';
+import UgcOverview from '../global/ugcOverview';
 
 export default class HomeController extends PageManager {
     constructor(context) {
@@ -14,6 +15,7 @@ export default class HomeController extends PageManager {
             showAllText: 'Show All Products',
             showLessText: 'Show Less',
         });
+        this.ugcOverview = new UgcOverview({ globalStateManager: StateManager });
         this.searchEngine = null;
         this.searchDataVersion = null;
         this.currentSelection = null;
@@ -23,6 +25,7 @@ export default class HomeController extends PageManager {
 
     onReady() {
         this.vehicleSelector.init();
+        this.ugcOverview.init();
 
         this.unsubscribe = StateManager.subscribe(this.handleStateChange.bind(this));
 
@@ -80,5 +83,6 @@ export default class HomeController extends PageManager {
         if (this.unsubscribe) this.unsubscribe();
         if (this.vehicleSelector) this.vehicleSelector.destroy();
         if (this.productGrid) this.productGrid.destroy();
+        if (this.ugcOverview) this.ugcOverview.destroy();
     }
 }

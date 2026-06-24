@@ -1,0 +1,75 @@
+<div class="cs-questions" data-questions>
+    <div class="cs-questions-toolbar" data-questions-toolbar>
+        <label class="cs-questions-control cs-questions-control--sort">
+            <span class="cs-questions-control-label">{{lang 'products.questions.sort_label'}}</span>
+            <select class="cs-questions-select cs-form-select" data-questions-control="sort">
+                <option value="date_desc">{{lang 'products.questions.sort_newest'}}</option>
+                <option value="date_asc">{{lang 'products.questions.sort_oldest'}}</option>
+            </select>
+        </label>
+        {{!-- "For your <vehicle>" fitment filter chip (SRS §3.4.1). Populated
+        async by ugcProduct.js only when the envelope's fitment_question_count > 0;
+        space is reserved via min-height + visibility:hidden in SCSS so the late
+        paint never shifts the toolbar. --}}
+        <div class="cs-fitment-chip-slot" data-questions-fitment-chip></div>
+        <button type="button" class="button button--primary cs-ugc-submit-open" data-question-modal-open>
+            {{lang 'products.questions.submit.open'}}
+        </button>
+    </div>
+    {{!-- Page controls render both above and below the list (ugcProduct.js paints
+    every [data-questions-pagination]). The top set collapses to zero height via
+    :empty on a single page, so it adds no gap below the toolbar. --}}
+    <div class="cs-questions-pagination cs-questions-pagination--top" data-questions-pagination></div>
+    <div id="product-questions"></div>
+    <div class="cs-questions-pagination cs-questions-pagination--bottom" data-questions-pagination></div>
+
+    <div class="cs-ugc-modal" data-question-modal hidden>
+        <div class="cs-ugc-modal-overlay" data-question-modal-close></div>
+        <div class="cs-ugc-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="cs-question-modal-title">
+            <button type="button" class="cs-ugc-modal-close" data-question-modal-close aria-label="{{lang 'products.questions.submit.close'}}">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            <header class="cs-ugc-modal-header">
+                <div class="cs-ugc-modal-heading">
+                    <h4 class="cs-ugc-modal-title" id="cs-question-modal-title">{{lang 'products.questions.submit.heading'}}</h4>
+                    <p class="cs-ugc-modal-subtitle">{{lang 'products.questions.submit.subheading'}}</p>
+                </div>
+            </header>
+            <form class="cs-ugc-form" data-question-form novalidate>
+                <p class="cs-ugc-form-error" data-question-error role="alert" hidden></p>
+                <p class="cs-ugc-form-success" data-question-success hidden>{{lang 'products.questions.submit.success'}}</p>
+
+                <div class="cs-ugc-fields" data-question-fields>
+                    <label class="cs-ugc-field">
+                        <span class="cs-ugc-field-label">{{lang 'products.questions.submit.body_label'}} *</span>
+                        <textarea class="cs-ugc-input" name="body" data-question-field="body" rows="5" required></textarea>
+                    </label>
+                    <label class="cs-ugc-field">
+                        <span class="cs-ugc-field-label">{{lang 'products.questions.submit.author_label'}} *</span>
+                        <input class="cs-ugc-input" type="text" name="author" data-question-field="author" maxlength="60" required>
+                    </label>
+                    {{!-- Vehicle section (SRS §3.4.1, M9 #41): no free-text input
+                    and no opt-in checkbox. Questions have no token path, so
+                    ugcProduct.js always paints the make/model/generation waterfall
+                    constrained to the archetype's own fitments — OPTIONAL for Q&A.
+                    Empty (absent) on universal products. --}}
+                    <div class="cs-ugc-vehicle" data-question-vehicle></div>
+
+                    <label class="cs-ugc-honeypot" aria-hidden="true">
+                        <span>{{lang 'products.questions.submit.website_label'}}</span>
+                        <input type="text" name="website" data-question-field="website" tabindex="-1" autocomplete="off">
+                    </label>
+
+                    <div class="cs-ugc-turnstile" data-question-turnstile data-ugc-turnstile-sitekey="{{theme_settings.ugc_turnstile_site_key}}"></div>
+                    <input type="hidden" name="cf_turnstile_token" data-question-field="cf_turnstile_token">
+
+                    <div class="cs-ugc-form-footer">
+                        <button type="submit" class="button button--primary" data-question-submit>
+                            {{lang 'products.questions.submit.submit_value'}}
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

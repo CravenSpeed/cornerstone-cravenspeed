@@ -13,3 +13,6 @@ vendor/bundle
 .idea/
 .python-version
 
+# Claude Code agent worktree checkouts (scratch; branches live on origin)
+.claude/worktrees/
+

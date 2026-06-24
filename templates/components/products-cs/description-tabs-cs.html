@@ -9,6 +9,10 @@
         </li>
 
         <li class="tab">
+            <a class="tab-title" href="#tab-questions">{{lang 'products.questions.header'}}</a>
+        </li>
+
+        <li class="tab">
             <a class="tab-title" href="#tab-shipping">Shipping</a>
         </li>
 
@@ -31,11 +35,9 @@
             {{> components/products-cs/reviews-cs}}
         </div>
 
-        {{#if product.videos.list.length}}
-        <div class="tab-content " id="tab-reviews">
-            {{> components/products-cs/reviews-cs}}
+        <div class="tab-content" id="tab-questions">
+            {{> components/products-cs/qa-cs}}
         </div>
-        {{/if}}
 
         <div class="tab-content" id="tab-shipping">
             {{> components/common/shipping-info}}

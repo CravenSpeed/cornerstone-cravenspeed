@@ -1,1 +1,125 @@
-<div id="product-reviews"></div>
+<div class="cs-reviews" data-reviews>
+    {{!-- UGC reviews-overview panel: archetype rating summary + customer
+    media grid (SRS §3.4.1). Populated async by ugcProduct.js; space is
+    reserved via min-height + visibility:hidden in SCSS so the late paint
+    never shifts layout. --}}
+    <section class="cs-ugc-media-grid" aria-label="Reviews overview" data-ugc-media-grid></section>
+
+    <div class="cs-reviews-toolbar" data-reviews-toolbar>
+        <label class="cs-reviews-control cs-reviews-control--sort">
+            <span class="cs-reviews-control-label">{{lang 'products.reviews.sort_label'}}</span>
+            <select class="cs-reviews-select cs-form-select" data-reviews-control="sort">
+                <option value="date_desc">{{lang 'products.reviews.sort_newest'}}</option>
+                <option value="date_asc">{{lang 'products.reviews.sort_oldest'}}</option>
+                <option value="rating_desc">{{lang 'products.reviews.sort_rating_high'}}</option>
+                <option value="rating_asc">{{lang 'products.reviews.sort_rating_low'}}</option>
+            </select>
+        </label>
+        <label class="cs-reviews-control cs-reviews-control--rating">
+            <span class="cs-reviews-control-label">{{lang 'products.reviews.filter_rating'}}</span>
+            <select class="cs-reviews-select cs-form-select" data-reviews-control="rating">
+                <option value="">{{lang 'products.reviews.filter_rating_all'}}</option>
+                <option value="5">5</option>
+                <option value="4">4</option>
+                <option value="3">3</option>
+                <option value="2">2</option>
+                <option value="1">1</option>
+            </select>
+        </label>
+        <label class="cs-reviews-control cs-reviews-control--toggle">
+            <input type="checkbox" data-reviews-control="verified">
+            <span class="cs-reviews-control-label">{{lang 'products.reviews.filter_verified'}}</span>
+        </label>
+        <label class="cs-reviews-control cs-reviews-control--toggle">
+            <input type="checkbox" data-reviews-control="media">
+            <span class="cs-reviews-control-label">{{lang 'products.reviews.filter_media'}}</span>
+        </label>
+        {{!-- "For your <vehicle>" fitment filter chip (SRS §3.4.1). Populated
+        async by ugcProduct.js only when the envelope's fitment_review_count > 0;
+        space is reserved via min-height + visibility:hidden in SCSS so the late
+        paint never shifts the toolbar. --}}
+        <div class="cs-fitment-chip-slot" data-reviews-fitment-chip></div>
+        <button type="button" class="button button--primary cs-ugc-submit-open" data-review-modal-open>
+            {{lang 'products.reviews.submit.open'}}
+        </button>
+    </div>
+    {{!-- Page controls are rendered both above and below the list (ugcProduct.js
+    paints every [data-reviews-pagination]). The top set collapses to zero height
+    via :empty when there's a single page, so it adds no gap below the toolbar. --}}
+    <div class="cs-reviews-pagination cs-reviews-pagination--top" data-reviews-pagination></div>
+    <div id="product-reviews"></div>
+    <div class="cs-reviews-pagination cs-reviews-pagination--bottom" data-reviews-pagination></div>
+
+    <div class="cs-ugc-modal" data-review-modal hidden>
+        <div class="cs-ugc-modal-overlay" data-review-modal-close></div>
+        <div class="cs-ugc-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="cs-review-modal-title">
+            <button type="button" class="cs-ugc-modal-close" data-review-modal-close aria-label="{{lang 'products.reviews.submit.close'}}">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            <header class="cs-ugc-modal-header">
+                <div class="cs-ugc-modal-heading">
+                    <h4 class="cs-ugc-modal-title" id="cs-review-modal-title">{{lang 'products.reviews.submit.heading'}}</h4>
+                    <p class="cs-ugc-modal-subtitle">{{lang 'products.reviews.submit.subheading'}}</p>
+                </div>
+            </header>
+            <form class="cs-ugc-form" data-review-form novalidate>
+                <p class="cs-ugc-form-error" data-review-error role="alert" hidden></p>
+                <p class="cs-ugc-form-success" data-review-success hidden>{{lang 'products.reviews.submit.success'}}</p>
+
+                <div class="cs-ugc-fields" data-review-fields>
+                    <label class="cs-ugc-field">
+                        <span class="cs-ugc-field-label">{{lang 'products.reviews.submit.rating_label'}} *</span>
+                        <select class="cs-ugc-input" name="rating" data-review-field="rating" required>
+                            <option value="">—</option>
+                            <option value="5">5</option>
+                            <option value="4">4</option>
+                            <option value="3">3</option>
+                            <option value="2">2</option>
+                            <option value="1">1</option>
+                        </select>
+                    </label>
+                    <label class="cs-ugc-field">
+                        <span class="cs-ugc-field-label">{{lang 'products.reviews.submit.title_label'}} *</span>
+                        <input class="cs-ugc-input" type="text" name="title" data-review-field="title" maxlength="120" required>
+                    </label>
+                    <label class="cs-ugc-field">
+                        <span class="cs-ugc-field-label">{{lang 'products.reviews.submit.body_label'}} *</span>
+                        <textarea class="cs-ugc-input" name="body" data-review-field="body" rows="5" required></textarea>
+                    </label>
+                    <label class="cs-ugc-field">
+                        <span class="cs-ugc-field-label">{{lang 'products.reviews.submit.author_label'}} *</span>
+                        <input class="cs-ugc-input" type="text" name="author" data-review-field="author" maxlength="60" required>
+                    </label>
+                    {{!-- Vehicle section (SRS §3.4.1, M9 #41): no free-text input
+                    and no opt-in checkbox. Populated on open by ugcProduct.js,
+                    tailored to the path — verified reviewers get NO UI (silent
+                    attach), non-verified reviewers a REQUIRED make/model/generation
+                    waterfall constrained to the archetype's own fitments. Empty
+                    (absent) on universal products. --}}
+                    <div class="cs-ugc-vehicle" data-review-vehicle></div>
+                    <label class="cs-ugc-field cs-ugc-field--media">
+                        <span class="cs-ugc-field-label">{{lang 'products.reviews.submit.media_label'}}</span>
+                        <input class="cs-ugc-input cs-ugc-input--file" type="file" name="media" data-review-field="media" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime" multiple>
+                        <span class="cs-ugc-field-hint">{{lang 'products.reviews.submit.media_hint'}}</span>
+                    </label>
+
+                    <p class="cs-ugc-processing" data-review-processing role="status" aria-live="polite" hidden></p>
+
+                    <label class="cs-ugc-honeypot" aria-hidden="true">
+                        <span>{{lang 'products.reviews.submit.website_label'}}</span>
+                        <input type="text" name="website" data-review-field="website" tabindex="-1" autocomplete="off">
+                    </label>
+
+                    <div class="cs-ugc-turnstile" data-review-turnstile data-ugc-turnstile-sitekey="{{theme_settings.ugc_turnstile_site_key}}"></div>
+                    <input type="hidden" name="cf_turnstile_token" data-review-field="cf_turnstile_token">
+
+                    <div class="cs-ugc-form-footer">
+                        <button type="submit" class="button button--primary" data-review-submit>
+                            {{lang 'products.reviews.submit.submit_value'}}
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
