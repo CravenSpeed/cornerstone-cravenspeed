@@ -759,7 +759,8 @@
                 "subject": "Asunto de revisión",
                 "comments": "Comentarios",
                 "submit_value": "Enviar opinión"
-            }
+            },
+            "sort_label": "Ordenar por"
         },
         "videos": {
             "header": "Videos",
@@ -819,7 +820,10 @@
             "price": "y recibe {discount} de descuento",
             "fixed": "y paga solo {discount} cada uno"
         },
-        "card_default_image_alt": "La imagen estará disponible próximamente"
+        "card_default_image_alt": "La imagen estará disponible próximamente",
+        "questions": {
+            "sort_label": "Ordenar por"
+        }
     },
     "invoice": {
         "for_order": "{name} Factura del pedido n.° {id}",

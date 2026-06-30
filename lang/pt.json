@@ -759,7 +759,8 @@
                 "subject": "Assunto da avaliação",
                 "comments": "Comentários",
                 "submit_value": "Enviar avaliação"
-            }
+            },
+            "sort_label": "Ordenar por"
         },
         "videos": {
             "header": "Vídeos",
@@ -819,7 +820,10 @@
             "price": "e receba {discount} de desconto",
             "fixed": "e pague apenas {discount} cada"
         },
-        "card_default_image_alt": "Imagem em breve"
+        "card_default_image_alt": "Imagem em breve",
+        "questions": {
+            "sort_label": "Ordenar por"
+        }
     },
     "invoice": {
         "for_order": "{name} Fatura do pedido #{id}",

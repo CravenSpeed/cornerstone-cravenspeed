@@ -759,7 +759,8 @@
                 "subject": "Onderwerp van beoordeling",
                 "comments": "Opmerkingen",
                 "submit_value": "Beoordeling verzenden"
-            }
+            },
+            "sort_label": "Sorteren op"
         },
         "videos": {
             "header": "Video's",
@@ -819,7 +820,10 @@
             "price": "en krijg {discount} korting",
             "fixed": "en betaal slechts {discount} voor elk artikel"
         },
-        "card_default_image_alt": "Afbeelding binnenkort beschikbaar"
+        "card_default_image_alt": "Afbeelding binnenkort beschikbaar",
+        "questions": {
+            "sort_label": "Sorteren op"
+        }
     },
     "invoice": {
         "for_order": "{name} Factuur voor bestelnummer {id}",

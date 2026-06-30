@@ -759,7 +759,8 @@
                 "subject": "Przegląd Przedmiot",
                 "comments": "Komentarze",
                 "submit_value": "Zgłoś recenzję"
-            }
+            },
+            "sort_label": "Sortuj według"
         },
         "videos": {
             "header": "Wideo",
@@ -819,7 +820,10 @@
             "price": "i otrzymaj {discount} off",
             "fixed": "i płacić tylko {discount}"
         },
-        "card_default_image_alt": "Obrazek już wkrótce"
+        "card_default_image_alt": "Obrazek już wkrótce",
+        "questions": {
+            "sort_label": "Sortuj według"
+        }
     },
     "invoice": {
         "for_order": "{name} Faktura za zamówienie #{id}",

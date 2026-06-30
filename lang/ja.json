@@ -759,7 +759,8 @@
                 "subject": "件名のレビュー",
                 "comments": "コメント",
                 "submit_value": "レビューの送信"
-            }
+            },
+            "sort_label": "並び替え"
         },
         "videos": {
             "header": "ビデオ",
@@ -819,7 +820,10 @@
             "price": "{discount}割引",
             "fixed": "それぞれ{discount}だけを支払う"
         },
-        "card_default_image_alt": "画像は近日公開予定"
+        "card_default_image_alt": "画像は近日公開予定",
+        "questions": {
+            "sort_label": "並び替え"
+        }
     },
     "invoice": {
         "for_order": "{name}注文番号 #{id}の請求書",
