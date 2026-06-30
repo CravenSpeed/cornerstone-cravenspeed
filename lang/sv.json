@@ -759,7 +759,8 @@
                 "subject": "Granska ämnet",
                 "comments": "Kommentarer",
                 "submit_value": "Skicka granskning"
-            }
+            },
+            "sort_label": "Sortera efter"
         },
         "videos": {
             "header": "Videor",
@@ -819,7 +820,10 @@
             "price": "och få {discount} rabatt",
             "fixed": "och betala endast {discount} vardera"
         },
-        "card_default_image_alt": "Bilden kommer snart"
+        "card_default_image_alt": "Bilden kommer snart",
+        "questions": {
+            "sort_label": "Sortera efter"
+        }
     },
     "invoice": {
         "for_order": "{name} Faktura för beställningsnummer{id}",

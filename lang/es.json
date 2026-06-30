@@ -759,7 +759,8 @@
                 "subject": "Tema de la reseña",
                 "comments": "Comentarios",
                 "submit_value": "Enviar reseña"
-            }
+            },
+            "sort_label": "Ordenar por"
         },
         "videos": {
             "header": "Vídeos",
@@ -819,7 +820,10 @@
             "price": "y obtén un {discount} de descuento",
             "fixed": "y paga solo {discount} por cada uno"
         },
-        "card_default_image_alt": "Imagen próximamente"
+        "card_default_image_alt": "Imagen próximamente",
+        "questions": {
+            "sort_label": "Ordenar por"
+        }
     },
     "invoice": {
         "for_order": "Factura de {name} para el pedido #{id}",

@@ -759,7 +759,8 @@
                 "subject": "Thema der Bewertung",
                 "comments": "Kommentare",
                 "submit_value": "Bewertung einreichen"
-            }
+            },
+            "sort_label": "Sortieren nach"
         },
         "videos": {
             "header": "Videos",
@@ -819,7 +820,10 @@
             "price": "und erhalten Sie {discount} Rabatt",
             "fixed": "und zahlen Sie jeweils nur {discount}"
         },
-        "card_default_image_alt": "Bild in Kürze verfügbar"
+        "card_default_image_alt": "Bild in Kürze verfügbar",
+        "questions": {
+            "sort_label": "Sortieren nach"
+        }
     },
     "invoice": {
         "for_order": "{name}-Rechnung für Bestellung #{id}",

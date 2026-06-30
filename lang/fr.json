@@ -759,7 +759,8 @@
                 "subject": "Objet de l'avis",
                 "comments": "Commentaires",
                 "submit_value": "Envoyer l'avis"
-            }
+            },
+            "sort_label": "Trier par"
         },
         "videos": {
             "header": "Vidéos",
@@ -819,7 +820,10 @@
             "price": "et bénéficiez de {discount} de remise",
             "fixed": "et ne payez que {discount} l'unité"
         },
-        "card_default_image_alt": "Image disponible bientôt"
+        "card_default_image_alt": "Image disponible bientôt",
+        "questions": {
+            "sort_label": "Trier par"
+        }
     },
     "invoice": {
         "for_order": "Facture {name} de la commande n° {id}",

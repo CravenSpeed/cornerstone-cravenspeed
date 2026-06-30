@@ -759,7 +759,8 @@
                 "subject": "Anmeldelsens emne",
                 "comments": "Kommentarer",
                 "submit_value": "Send inn anmeldelse"
-            }
+            },
+            "sort_label": "Sorter etter"
         },
         "videos": {
             "header": "Videoer",
@@ -819,7 +820,10 @@
             "price": "og få {discount} i rabatt",
             "fixed": "og betal kun {discount} hver"
         },
-        "card_default_image_alt": "Bilde kommer snart"
+        "card_default_image_alt": "Bilde kommer snart",
+        "questions": {
+            "sort_label": "Sorter etter"
+        }
     },
     "invoice": {
         "for_order": "{name} Faktura for bestilling nr. {id}",

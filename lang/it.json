@@ -759,7 +759,8 @@
                 "subject": "Rivedi titolo",
                 "comments": "Commenti",
                 "submit_value": "Invia recensione"
-            }
+            },
+            "sort_label": "Ordina per"
         },
         "videos": {
             "header": "Video",
@@ -819,7 +820,10 @@
             "price": "e ottieni uno sconto del {discount}",
             "fixed": "e paga solo {discount} per articolo"
         },
-        "card_default_image_alt": "Immagine disponibile a breve"
+        "card_default_image_alt": "Immagine disponibile a breve",
+        "questions": {
+            "sort_label": "Ordina per"
+        }
     },
     "invoice": {
         "for_order": "Fattura {name} per l'ordine n. {id}",
