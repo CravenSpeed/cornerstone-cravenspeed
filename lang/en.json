@@ -813,7 +813,7 @@
                 "website_label": "Leave this field empty",
                 "submit_value": "Submit Question",
                 "submitting": "Submitting…",
-                "success": "Thanks! Your question has been submitted and will appear once answered.",
+                "success": "To protect your privacy, we don't collect email addresses for questions. We review new questions every weekday — check back on this page for your answer, usually within 1 business day.",
                 "required_error": "Please fill in all required fields.",
                 "turnstile_error": "Please complete the verification challenge.",
                 "close": "Close"
