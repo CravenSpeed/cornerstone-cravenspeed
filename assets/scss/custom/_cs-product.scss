@@ -882,6 +882,17 @@ $cs-fitment-active-hover: #05a;
   line-height: 1;
 }
 
+// Per-vehicle average rating (cs-ugc#217), shown next to the count on the
+// reviews fitment chip. Muted/neutral: inherits the chip's text color (dark on
+// the neutral pill, white on the active blue one) at reduced weight/opacity so
+// it reads as secondary to the vehicle label.
+.cs-fitment-chip-avg {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1;
+  opacity: 0.85;
+}
+
 .cs-fitment-chip-clear {
   display: inline-flex;
   align-items: center;

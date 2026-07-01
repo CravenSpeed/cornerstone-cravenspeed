@@ -216,6 +216,11 @@ const showingChipLabel = vehicle => `Showing: ${vehicle}`;
 // is offered. `noun` is 'reviews' or 'questions'.
 const noFitmentMatchLabel = (vehicle, noun) => `No ${noun} yet for your ${vehicle}`;
 
+// Per-vehicle average rating shown next to the count on the reviews fitment chip
+// (cs-ugc#217). The `★` glyph fixes the scale; one decimal keeps it defensive
+// against an unrounded server value.
+const fitmentChipAvgLabel = average => `${Number(average).toFixed(1)}★`;
+
 export default class UgcProduct {
     /**
      * @param {number|string} archetypeId - QTY archetype id, from the archetype
@@ -302,6 +307,7 @@ export default class UgcProduct {
         this.fitmentLabel = null;
         this.fitmentOnly = false;
         this.fitmentReviewCount = 0;
+        this.fitmentRatingAverage = null;
         this.fitmentQuestionCount = 0;
         this.reviewsLoaded = false;
 
@@ -1685,6 +1691,14 @@ export default class UgcProduct {
         this.fitmentReviewCount = Number.isFinite(data.fitment_review_count)
             ? data.fitment_review_count
             : 0;
+
+        // Per-vehicle average for the same (archetype, approved, fitment) cell
+        // (cs-ugc#217), rendered next to the count on the reviews chip. Computed
+        // and rounded server-side over the whole cell — never the visible page —
+        // and null on an empty cell / unresolved fitment, so guard on non-null.
+        this.fitmentRatingAverage = Number.isFinite(data.fitment_rating_average)
+            ? data.fitment_rating_average
+            : null;
         this.renderFitmentChip('reviews');
 
         const items = Array.isArray(data.items) ? data.items : [];
@@ -1959,7 +1973,14 @@ export default class UgcProduct {
         if (this.clickFilterId !== null) {
             const showing = this._escape(showingChipLabel(this.clickFilterLabel));
             const clearControl = `<button type="button" class="cs-fitment-chip-clear" data-fitment-chip-clear aria-label="${this._escapeAttr(MESSAGES.fitmentChipClear)}">&times;</button>`;
-            container.innerHTML = `<span class="cs-fitment-showing">${showing}</span>${clearControl}`;
+
+            // The click-filter drives the same `fitment_only` query at the clicked
+            // fitment, so the response's per-vehicle average is that vehicle's
+            // (cs-ugc#217). Reviews-only, non-null-gated — same rule as the chip.
+            const showingAvg = (kind !== 'questions' && this.fitmentRatingAverage !== null)
+                ? `<span class="cs-fitment-chip-avg">${this._escape(fitmentChipAvgLabel(this.fitmentRatingAverage))}</span>`
+                : '';
+            container.innerHTML = `<span class="cs-fitment-showing">${showing}</span>${showingAvg}${clearControl}`;
             container.style.visibility = 'visible';
             return;
         }
@@ -1999,7 +2020,13 @@ export default class UgcProduct {
             ? `<button type="button" class="cs-fitment-chip-clear" data-fitment-chip-clear aria-label="${this._escapeAttr(MESSAGES.fitmentChipClear)}">&times;</button>`
             : '';
 
-        container.innerHTML = `<button type="button" class="cs-fitment-chip${activeClass}" data-fitment-chip-toggle aria-pressed="${pressed}"><span class="cs-fitment-chip-label">${label}</span><span class="cs-fitment-chip-count">${count}</span></button>${clear}`;
+        // Per-vehicle average (cs-ugc#217) — reviews-only (questions carry no
+        // rating) and only when the cell has a non-null aggregate.
+        const avg = (kind !== 'questions' && this.fitmentRatingAverage !== null)
+            ? `<span class="cs-fitment-chip-avg">${this._escape(fitmentChipAvgLabel(this.fitmentRatingAverage))}</span>`
+            : '';
+
+        container.innerHTML = `<button type="button" class="cs-fitment-chip${activeClass}" data-fitment-chip-toggle aria-pressed="${pressed}"><span class="cs-fitment-chip-label">${label}</span>${avg}<span class="cs-fitment-chip-count">${count}</span></button>${clear}`;
         container.style.visibility = 'visible';
     }
 
