@@ -585,7 +585,7 @@ export default class UgcOverview {
                 ${countryFlag(review.country)}
                 ${date ? `<span class="cs-review-date">${date}</span>` : ''}
                 ${verifiedBadge(review.verified_purchaser)}
-                ${editedBadge(review.edited)}
+                ${editedBadge(review.edited, review.edit_reason)}
             </p>
             ${archetypeUrl ? `<a class="cs-ugc-overview-product" href="${archetypeUrl}">${archetypeName}</a>` : ''}
         `;

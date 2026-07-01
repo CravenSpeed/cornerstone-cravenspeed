@@ -46,6 +46,27 @@ describe('ugcCard shared primitives', () => {
             expect(editedBadge(undefined)).toBe('');
             expect(editedBadge('true')).toBe('');
         });
+
+        it('appends the edit_reason label verbatim when edited with a reason', () => {
+            const html = editedBadge(true, 'Customer request');
+            expect(html).toBe('<span class="cs-review-edited">Edited by CravenSpeed — Customer request</span>');
+        });
+
+        it('renders the bare marker when edited without a reason', () => {
+            expect(editedBadge(true, null)).toBe('<span class="cs-review-edited">Edited by CravenSpeed</span>');
+            expect(editedBadge(true, undefined)).toBe('<span class="cs-review-edited">Edited by CravenSpeed</span>');
+            expect(editedBadge(true, '')).toBe('<span class="cs-review-edited">Edited by CravenSpeed</span>');
+        });
+
+        it('never renders when not edited, even if a reason is present', () => {
+            expect(editedBadge(false, 'Customer request')).toBe('');
+        });
+
+        it('escapes the reason before interpolation', () => {
+            const html = editedBadge(true, '<b>x</b> & "y"');
+            expect(html).toContain('&lt;b&gt;x&lt;/b&gt; &amp; &quot;y&quot;');
+            expect(html).not.toContain('<b>');
+        });
     });
 
     describe('countryFlag', () => {

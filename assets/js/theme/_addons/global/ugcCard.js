@@ -58,16 +58,27 @@ export function verifiedBadge(isVerified) {
 }
 
 /**
- * The staff-edit disclosure marker (SRS §3.2.1 `edited` / §3.1.1, cs-ugc #145).
- * Strict `=== true` so a missing flag on an older payload renders nothing — the
- * card must never break on an absent field, and it never reveals who edited.
+ * The staff-edit disclosure marker (SRS §3.2.1 `edited` / `edit_reason` / §3.1.1,
+ * cs-ugc #145 / #305). Strict `=== true` so a missing flag on an older payload
+ * renders nothing — the card must never break on an absent field, and it never
+ * reveals who edited.
+ *
+ * `edit_reason` is a server-supplied, ready-to-display label (one of a fixed
+ * enum) disclosing *why* the content was altered; it is `null` on reviews that
+ * were never content-edited and absent on older payloads. When present it is
+ * appended verbatim (no code→label mapping) after an em dash, escaped defensively
+ * like `vehicleBadge`. A missing/null reason renders exactly as before.
  * @param {boolean} isEdited
+ * @param {string|null} [reason] - The `edit_reason` label, or null/absent.
  * @returns {string}
  */
-export function editedBadge(isEdited) {
-    return isEdited === true
-        ? '<span class="cs-review-edited">Edited by CravenSpeed</span>'
-        : '';
+export function editedBadge(isEdited, reason) {
+    if (isEdited !== true) {
+        return '';
+    }
+
+    const suffix = reason ? ` — ${escapeHtml(reason)}` : '';
+    return `<span class="cs-review-edited">Edited by CravenSpeed${suffix}</span>`;
 }
 
 /**
