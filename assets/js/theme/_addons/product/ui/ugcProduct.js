@@ -2951,12 +2951,13 @@ export default class UgcProduct {
         const body = this._escape(review.body);
         const date = formatReviewDate(review.date);
         const verified = verifiedBadge(review.verified_purchaser);
-        // Public disclosure that staff edited this review's content (SRS §3.2.1
-        // `edited` / §3.1.1, cs-ugc #145). Strict `=== true` so a missing field
-        // on an older payload is treated as false and nothing renders — the card
-        // must never break on an absent flag, and it never reveals who edited or
-        // how many times (only the derived boolean is exposed).
-        const edited = editedBadge(review.edited);
+        // Public disclosure that staff edited this review's content, and why
+        // (SRS §3.2.1 `edited` / `edit_reason` / §3.1.1, cs-ugc #145 / #305).
+        // Strict `=== true` so a missing field on an older payload is treated as
+        // false and nothing renders — the card must never break on an absent
+        // flag, and it never reveals who edited or how many times (only the
+        // derived boolean and the public reason label are exposed).
+        const edited = editedBadge(review.edited, review.edit_reason);
         const staff = review.staff_response
             ? `<div class="cs-review-staff"><strong>CravenSpeed:</strong> ${this._escape(review.staff_response)}</div>`
             : '';
