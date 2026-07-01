@@ -1257,6 +1257,120 @@ describe('UgcProduct (slice A — fitment filter chip, reviews)', () => {
     });
 });
 
+describe('UgcProduct (cs-ugc#217 — per-vehicle average on the fitment chip)', () => {
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    const reviewsChip = () => document.querySelector('[data-reviews-fitment-chip]');
+
+    // Reviews api carrying the per-vehicle cell aggregate (count + average) the
+    // server returns alongside the list envelope (cs-ugc#217).
+    const buildReviewsApi = (count, average) => ({
+        getReviews: jest.fn(() => Promise.resolve(okEnvelope({
+            fitment_review_count: count,
+            fitment_rating_average: average,
+        }))),
+    });
+
+    it('renders <avg>★ next to the count on the garage chip when non-null', async () => {
+        mountScaffold();
+        const api = buildReviewsApi(4, 3.5);
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+        await flush();
+
+        const avg = reviewsChip().querySelector('.cs-fitment-chip-avg');
+        expect(avg).not.toBeNull();
+        expect(avg.textContent).toBe('3.5★');
+        expect(reviewsChip().querySelector('.cs-fitment-chip-count').textContent).toBe('4');
+    });
+
+    it('formats the average to one decimal (defensive against an unrounded value)', async () => {
+        mountScaffold();
+        const api = buildReviewsApi(4, 4);
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+        await flush();
+
+        expect(reviewsChip().querySelector('.cs-fitment-chip-avg').textContent).toBe('4.0★');
+    });
+
+    it('hides the average when fitment_rating_average is null (chip renders as before)', async () => {
+        mountScaffold();
+        const api = buildReviewsApi(4, null);
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+        await flush();
+
+        expect(reviewsChip().querySelector('.cs-fitment-chip-avg')).toBeNull();
+        expect(reviewsChip().querySelector('.cs-fitment-chip-count').textContent).toBe('4');
+    });
+
+    it('hides the average on a payload lacking the field (backward-compatible)', async () => {
+        mountScaffold();
+        const api = { getReviews: jest.fn(() => Promise.resolve(okEnvelope({ fitment_review_count: 4 }))) };
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+        await flush();
+
+        expect(reviewsChip().querySelector('.cs-fitment-chip-avg')).toBeNull();
+    });
+
+    it('shows the average on the click-filtered "Showing: <vehicle>" chip when non-null', async () => {
+        mountScaffold();
+        const review = {
+            id: 1, author: 'Jane D.', rating: 5, title: 't', body: 'b', fitment_id: 42, vehicle_label: 'MINI Cooper R53 2002 to 2006',
+        };
+        const api = {
+            getReviews: jest.fn(() => Promise.resolve(okEnvelope({
+                items: [review], total: 1, fitment_review_count: 4, fitment_rating_average: 2.5,
+            }))),
+        };
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api);
+        await flush();
+
+        document.querySelector('#product-reviews .cs-ugc-vehicle-badge').click();
+        await flush();
+
+        expect(reviewsChip().querySelector('.cs-fitment-showing')).not.toBeNull();
+        expect(reviewsChip().querySelector('.cs-fitment-chip-avg').textContent).toBe('2.5★');
+    });
+
+    it('leaves the questions chip unaffected (reviews-only rating)', async () => {
+        document.body.innerHTML = `
+            <div class="cs-reviews-toolbar" data-reviews-toolbar>
+                <select data-reviews-control="sort"><option value="date_desc">Newest</option></select>
+                <div class="cs-fitment-chip-slot" data-reviews-fitment-chip></div>
+            </div>
+            <div id="product-reviews"></div>
+            <div class="cs-questions-toolbar" data-questions-toolbar>
+                <select data-questions-control="sort"><option value="date_desc">Newest</option></select>
+                <div class="cs-fitment-chip-slot" data-questions-fitment-chip></div>
+            </div>
+            <div id="product-questions"></div>
+        `;
+        const api = {
+            getReviews: jest.fn(() => Promise.resolve(okEnvelope({ fitment_review_count: 4, fitment_rating_average: 3.5 }))),
+            getQuestions: jest.fn(() => Promise.resolve({
+                ok: true,
+                status: 200,
+                data: {
+                    items: [], total: 0, page: 1, per_page: 10, fitment_question_count: 2,
+                },
+            })),
+        };
+        const global = buildGlobalStateManager({ vehicle: F56_GARAGE, registry: F56_REGISTRY });
+        new UgcProduct(ARCHETYPE_ID, buildStateManager(), api, undefined, global);
+        await flush();
+
+        expect(reviewsChip().querySelector('.cs-fitment-chip-avg')).not.toBeNull();
+        const questionsChip = document.querySelector('[data-questions-fitment-chip]');
+        expect(questionsChip.querySelector('[data-fitment-chip-toggle]')).not.toBeNull();
+        expect(questionsChip.querySelector('.cs-fitment-chip-avg')).toBeNull();
+    });
+});
+
 describe('UgcProduct (issue #45 — click a vehicle badge to filter)', () => {
     afterEach(() => {
         document.body.innerHTML = '';
